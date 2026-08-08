@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Lesson 1 — The Agentic Loop</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<nav class="crumbs"><a href="../MISSION.md">Mission</a> · Lesson 1 of the agentic-loop series</nav>
+
+<div class="kicker">Lesson 0001</div>
+<h1>The Agentic Loop</h1>
+<p class="callout">Your <code>AnthropicAgent.run()</code> right now does exactly one thing: send a prompt, get one response, return it. This lesson is about the one change that turns that into an agent — and nothing more than that change. No frameworks, no new abstractions.</p>
+
+<h2>The definition, from the source</h2>
+<blockquote>
+Agents ... are typically just LLMs using tools based on environmental feedback in a loop. It is therefore crucial to design toolsets and their documentation clearly and thoughtfully.
+<cite>Anthropic, <a href="https://www.anthropic.com/engineering/building-effective-agents">Building Effective Agents</a> (Dec 2024)</cite>
+</blockquote>
+
+<p>Unpack that sentence and there are exactly four moving parts:</p>
+
+<div class="diagram">
+  <div class="box model">call model</div>
+  <div class="arrow">&rarr;</div>
+  <div class="box">check why it stopped</div>
+  <div class="arrow">&rarr;</div>
+  <div class="box">run any tool calls</div>
+  <div class="arrow">&rarr;</div>
+  <div class="box">append results</div>
+  <div class="arrow">&curvearrowleft;</div>
+</div>
+
+<p>That loop keeps turning until the model stops asking for tools and just answers. That's it — the entire conceptual leap from "single LLM call" to "agent" is <em>looping on tool calls until the model is done</em>. Everything else you'll ever add (retries, budgets, subagents, memory) sits on top of this.</p>
+
+<h2>Where your code stands today</h2>
+<p>Look at <code>app/factory/anthropic.py</code> — <code>run()</code> makes one call to <code>self.client.messages.create(...)</code> and returns the text. There's no check of <code>stop_reason</code>, no branch for "the model wants a tool," no re-call. If you pass <code>tools=</code> today and the model responds with <code>stop_reason == "tool_use"</code>, your code silently returns whatever text happened to be in <code>response.content</code> — which is often empty, because the model's whole response <em>was</em> the tool call.</p>
+<p>That's the bug this lesson fixes.</p>
+
+<h2>Quick recall — stop / finish reasons</h2>
+<p>One word each. Same box size on purpose — no hints from formatting. Check <a href="../reference/agentic-loop-cheatsheet.html">the cheatsheet</a> first if you haven't read it yet, then come back and do this from memory.</p>
+
+<div class="quiz" data-answer="tool_use">
+  <div class="q">1. On Anthropic, <code>response.stop_reason</code> equals what when the model wants to call a tool?</div>
+  <input type="text" placeholder="stop_reason value">
+  <button onclick="checkQuiz(this)">Check</button>
+  <div class="feedback"></div>
+</div>
+
+<div class="quiz" data-answer="end_turn">
+  <div class="q">2. On Anthropic, what <code>stop_reason</code> means the model is actually finished — return to the caller?</div>
+  <input type="text" placeholder="stop_reason value">
+  <button onclick="checkQuiz(this)">Check</button>
+  <div class="feedback"></div>
+</div>
+
+<div class="quiz" data-answer="tool_calls">
+  <div class="q">3. On Groq/OpenAI, <code>choices[0].finish_reason</code> equals what when the model wants to call a tool?</div>
+  <input type="text" placeholder="finish_reason value">
+  <button onclick="checkQuiz(this)">Check</button>
+  <div class="feedback"></div>
+</div>
+
+<div class="quiz" data-answer="tool">
+  <div class="q">4. On Groq/OpenAI, what <code>role</code> does each tool-result message carry?</div>
+  <input type="text" placeholder="role value">
+  <button onclick="checkQuiz(this)">Check</button>
+  <div class="feedback"></div>
+</div>
+
+<h2>Practice — fill the loop</h2>
+<p>Below is the skeleton for <code>AnthropicAgent.run()</code> with the loop body blanked out. Don't paste an answer — write it yourself against the <a href="../reference/agentic-loop-cheatsheet.html">cheatsheet</a>, then compare. This is the exercise; the retrieval effort is the point, not the finished code.</p>
+
+<pre><code>def run(self, ..., max_iterations: int = 10) -> str:
+    messages = [...]  # your existing history + user turn
+    for _ in range(max_iterations):
+        response = self.client.messages.create(
+            model=model, max_tokens=max_tokens,
+            system=system_prompt, messages=messages, tools=tools_param,
+        )
+
+        # TODO 1: if response.stop_reason is not "tool_use", you're done —
+        #         extract the text block and return it.
+
+        # TODO 2: append the assistant turn to `messages` (the *whole*
+        #         response.content, not just the text — you need the
+        #         tool_use blocks' ids for the next step).
+
+        # TODO 3: for each tool_use block in response.content, run the
+        #         tool (your own function — you write this), and build
+        #         one tool_result dict per call.
+
+        # TODO 4: append ONE user message containing all the tool_result
+        #         blocks from this iteration. Loop continues.
+
+    raise RuntimeError("hit max_iterations without the model finishing")
+</code></pre>
+
+<div class="win">
+<div class="kicker">Tangible win</div>
+<p>When you've filled this in and it runs against a real tool (even a fake <code>get_weather</code> that returns a hardcoded string), you have a working agentic loop. That's the whole mission's foundation — every later lesson (error handling, the Groq/OpenAI variant, iteration budgets) extends this same shape.</p>
+</div>
+
+<div class="callout ask">
+<strong>Stuck, or something in the loop doesn't match what you see in your actual API responses?</strong> Ask me directly — paste the response object or the traceback and I'll walk through it with you. That's faster than guessing from this page alone.</div>
+
+<footer class="lesson-footer">
+Primary source: <a href="https://www.anthropic.com/engineering/building-effective-agents">Building Effective Agents</a> (Anthropic Engineering, Dec 2024) — read the "Agents" and "When (and when not) to use agents" sections in full; this lesson only covers the loop mechanics.
+<br>Reference: <a href="../reference/agentic-loop-cheatsheet.html">Agentic Loop Cheatsheet</a>
+</footer>
+
+<script>
+function checkQuiz(btn) {
+  const wrap = btn.closest('.quiz');
+  const input = wrap.querySelector('input');
+  const feedback = wrap.querySelector('.feedback');
+  const given = input.value.trim().toLowerCase().replace(/['"]/g, '');
+  const answer = wrap.dataset.answer.toLowerCase();
+  if (given === answer) {
+    feedback.textContent = 'Correct.';
+    feedback.className = 'feedback correct';
+  } else {
+    feedback.textContent = 'Not quite — check the cheatsheet and try again.';
+    feedback.className = 'feedback wrong';
+  }
+}
+</script>
+
+</body>
+</html>

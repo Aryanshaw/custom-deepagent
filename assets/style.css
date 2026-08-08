@@ -1,0 +1,252 @@
+/* Shared stylesheet for teach workspace: lessons + reference docs */
+
+:root {
+  --ink: #1a1a1a;
+  --paper: #fdfcf9;
+  --rule: #d8d3c8;
+  --accent: #9b3d1f;
+  --accent-soft: #f4e9e1;
+  --code-bg: #f4f1ea;
+  --muted: #6b6558;
+  --ok: #2f6e4c;
+  --bad: #a13a2f;
+  --max-w: 760px;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --ink: #ece7dd;
+    --paper: #1c1a17;
+    --rule: #3a352c;
+    --accent: #e28a5f;
+    --accent-soft: #2c231d;
+    --code-bg: #262019;
+    --muted: #a89f8e;
+    --ok: #7fbf9c;
+    --bad: #e08479;
+  }
+}
+
+* { box-sizing: border-box; }
+
+html { color-scheme: light dark; }
+
+body {
+  max-width: var(--max-w);
+  margin: 0 auto;
+  padding: 3rem 1.5rem 6rem;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
+  font-size: 19px;
+  line-height: 1.6;
+}
+
+h1, h2, h3 {
+  font-family: -apple-system, "Helvetica Neue", Arial, sans-serif;
+  font-weight: 700;
+  line-height: 1.25;
+}
+
+h1 {
+  font-size: 1.9rem;
+  margin: 0 0 0.25rem;
+}
+
+.kicker {
+  font-family: -apple-system, "Helvetica Neue", Arial, sans-serif;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 0.75rem;
+  color: var(--accent);
+  font-weight: 600;
+  margin-bottom: 0.5rem;
+}
+
+h2 {
+  font-size: 1.25rem;
+  margin: 2.5rem 0 0.75rem;
+  border-bottom: 1px solid var(--rule);
+  padding-bottom: 0.35rem;
+}
+
+h3 {
+  font-size: 1.05rem;
+  margin: 1.5rem 0 0.5rem;
+}
+
+p { margin: 0 0 1rem; }
+
+a { color: var(--accent); }
+a:visited { color: var(--accent); }
+
+code, pre {
+  font-family: "SF Mono", Menlo, Consolas, monospace;
+  font-size: 0.86rem;
+}
+
+code {
+  background: var(--code-bg);
+  padding: 0.1em 0.35em;
+  border-radius: 3px;
+}
+
+pre {
+  background: var(--code-bg);
+  padding: 1rem 1.1rem;
+  border-radius: 6px;
+  overflow-x: auto;
+  border: 1px solid var(--rule);
+  margin: 0 0 1.25rem;
+}
+
+pre code { background: none; padding: 0; }
+
+blockquote {
+  margin: 1.25rem 0;
+  padding: 0.5rem 1rem;
+  border-left: 3px solid var(--accent);
+  background: var(--accent-soft);
+  font-style: italic;
+}
+
+blockquote cite {
+  display: block;
+  font-style: normal;
+  font-size: 0.82rem;
+  color: var(--muted);
+  margin-top: 0.35rem;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 0 0 1.25rem;
+  font-size: 0.92rem;
+}
+
+th, td {
+  text-align: left;
+  padding: 0.45rem 0.6rem;
+  border-bottom: 1px solid var(--rule);
+  vertical-align: top;
+}
+
+th {
+  font-family: -apple-system, "Helvetica Neue", Arial, sans-serif;
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+
+.callout {
+  border: 1px solid var(--rule);
+  border-left: 3px solid var(--accent);
+  padding: 0.85rem 1rem;
+  border-radius: 4px;
+  margin: 1.25rem 0;
+  background: var(--accent-soft);
+  font-size: 0.95rem;
+}
+
+.callout.ask {
+  border-left-color: var(--ok);
+}
+
+.win {
+  border: 1px dashed var(--rule);
+  padding: 1rem;
+  border-radius: 6px;
+  margin: 1.5rem 0;
+}
+
+.win .kicker { color: var(--ok); }
+
+nav.crumbs {
+  font-family: -apple-system, "Helvetica Neue", Arial, sans-serif;
+  font-size: 0.8rem;
+  color: var(--muted);
+  margin-bottom: 2rem;
+}
+
+nav.crumbs a { color: var(--muted); text-decoration: underline; }
+
+footer.lesson-footer {
+  margin-top: 3rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--rule);
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+/* --- quiz widget --- */
+
+.quiz {
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  padding: 1rem 1.1rem;
+  margin: 1.25rem 0;
+  background: var(--code-bg);
+}
+
+.quiz .q {
+  font-family: -apple-system, "Helvetica Neue", Arial, sans-serif;
+  font-weight: 600;
+  margin-bottom: 0.6rem;
+}
+
+.quiz input[type="text"] {
+  font-family: "SF Mono", Menlo, Consolas, monospace;
+  font-size: 0.9rem;
+  padding: 0.4rem 0.55rem;
+  width: 100%;
+  max-width: 320px;
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  background: var(--paper);
+  color: var(--ink);
+}
+
+.quiz button {
+  font-family: -apple-system, "Helvetica Neue", Arial, sans-serif;
+  font-size: 0.85rem;
+  margin-left: 0.5rem;
+  padding: 0.4rem 0.85rem;
+  border: 1px solid var(--accent);
+  background: var(--accent);
+  color: var(--paper);
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.quiz button:hover { opacity: 0.9; }
+
+.quiz .feedback {
+  margin-top: 0.6rem;
+  font-size: 0.88rem;
+  min-height: 1.2em;
+}
+
+.quiz .feedback.correct { color: var(--ok); }
+.quiz .feedback.wrong { color: var(--bad); }
+
+.diagram {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  font-family: -apple-system, "Helvetica Neue", Arial, sans-serif;
+  font-size: 0.85rem;
+  margin: 1.5rem 0;
+}
+
+.diagram .box {
+  border: 1px solid var(--ink);
+  border-radius: 5px;
+  padding: 0.6rem 0.8rem;
+  background: var(--paper);
+}
+
+.diagram .box.model { border-color: var(--accent); color: var(--accent); font-weight: 600; }
+.diagram .arrow { color: var(--muted); font-size: 1.1rem; }

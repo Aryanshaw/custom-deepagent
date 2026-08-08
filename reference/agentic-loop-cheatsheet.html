@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Agentic Loop — Cheatsheet</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<nav class="crumbs"><a href="../lessons/0001-the-agentic-loop.html">&larr; Lesson 0001</a> · Reference</nav>
+
+<div class="kicker">Reference</div>
+<h1>Agentic Loop Cheatsheet</h1>
+<p class="callout">Print this one out. It's the shape you'll reach for every time you wire up tool use, on any of your three providers.</p>
+
+<h2>The skeleton (pseudocode, provider-agnostic)</h2>
+<pre><code>messages = [user_message]
+for i in range(MAX_ITERATIONS):
+    response = call_model(messages, tools=tools)
+    if not response.wants_tool_call:
+        return response.text          # done — this is the exit
+
+    messages.append(response.raw)     # keep the assistant turn, tool-call and all
+    results = [run_tool(call) for call in response.tool_calls]
+    messages.append(tool_results_message(results))
+    # loop continues — model sees the results next iteration
+raise RuntimeError("hit MAX_ITERATIONS — model never stopped calling tools")
+</code></pre>
+
+<p>Four moving parts, every time: <strong>call</strong> → <strong>check why it stopped</strong> → <strong>run tools if asked</strong> → <strong>append results and repeat</strong>. Everything below is just how each provider spells those four parts.</p>
+
+<h2>Anthropic (Messages API)</h2>
+<table>
+<tr><th>Concept</th><th>Field / shape</th></tr>
+<tr><td>Why did it stop?</td><td><code>response.stop_reason</code></td></tr>
+<tr><td>It wants a tool</td><td><code>stop_reason == "tool_use"</code></td></tr>
+<tr><td>Find the calls</td><td><code>[b for b in response.content if b.type == "tool_use"]</code> — each has <code>.id</code>, <code>.name</code>, <code>.input</code></td></tr>
+<tr><td>Append assistant turn</td><td><code>messages.append({"role": "assistant", "content": response.content})</code> — the <em>whole</em> content list, not just the text</td></tr>
+<tr><td>Return results</td><td>One <code>user</code> message, one <code>tool_result</code> block per call, matched by <code>tool_use_id</code></td></tr>
+<tr><td>It's actually done</td><td><code>stop_reason == "end_turn"</code></td></tr>
+<tr><td>Hit the output cap</td><td><code>stop_reason == "max_tokens"</code> — not the same as done; decide whether to retry with a bigger cap</td></tr>
+<tr><td>Refused</td><td><code>stop_reason == "refusal"</code> — check <code>response.stop_details</code>, don't retry the same prompt</td></tr>
+</table>
+
+<pre><code>tool_result = {
+    "type": "tool_result",
+    "tool_use_id": call.id,
+    "content": str(result),
+    "is_error": False,   # True + error text if the tool raised
+}
+messages.append({"role": "user", "content": [tool_result, ...]})  # all results, one message
+</code></pre>
+
+<h2>OpenAI &amp; Groq (Chat Completions shape — both your <code>groq.py</code> and <code>openai.py</code> use this)</h2>
+<table>
+<tr><th>Concept</th><th>Field / shape</th></tr>
+<tr><td>Why did it stop?</td><td><code>response.choices[0].finish_reason</code></td></tr>
+<tr><td>It wants a tool</td><td><code>finish_reason == "tool_calls"</code></td></tr>
+<tr><td>Find the calls</td><td><code>response.choices[0].message.tool_calls</code> — each has <code>.id</code>, <code>.function.name</code>, <code>.function.arguments</code> (a JSON <em>string</em> — parse it)</td></tr>
+<tr><td>Append assistant turn</td><td><code>messages.append(response.choices[0].message)</code> — must include the <code>tool_calls</code> field</td></tr>
+<tr><td>Return results</td><td><strong>One message per tool call</strong> — different from Anthropic — each <code>role: "tool"</code>, with <code>tool_call_id</code> matching</td></tr>
+<tr><td>It's actually done</td><td><code>finish_reason == "stop"</code></td></tr>
+</table>
+
+<pre><code>for call in message.tool_calls:
+    result = run_tool(call.function.name, json.loads(call.function.arguments))
+    messages.append({
+        "role": "tool",
+        "tool_call_id": call.id,
+        "content": str(result),
+    })
+</code></pre>
+
+<div class="callout">
+<strong>The one shape difference that bites people:</strong> Anthropic returns <em>all</em> tool results in a single <code>user</code> message with multiple <code>tool_result</code> blocks. OpenAI/Groq want <em>one message per tool call</em>, each with <code>role: "tool"</code>. Copy-pasting the Anthropic append logic into your Groq/OpenAI path is the classic first bug.
+</div>
+
+<h2>Non-negotiables</h2>
+<ul>
+<li><strong>Always cap iterations.</strong> A model that keeps calling tools forever is not hypothetical — malformed tool results, ambiguous instructions, and buggy tools all trigger it.</li>
+<li><strong>Always append the full raw assistant turn</strong>, not a re-derived version. The API needs the exact tool-call IDs it generated to match your results back up next request.</li>
+<li><strong>A failed tool is still a result, not a raised exception</strong> out of the loop. Catch it, tell the model what went wrong (<code>is_error: true</code> on Anthropic), let it decide what to do next.</li>
+</ul>
+
+<footer class="lesson-footer">
+Source: <a href="https://www.anthropic.com/engineering/building-effective-agents">Building Effective Agents</a> (Anthropic, Dec 2024) · <a href="https://platform.claude.com/docs/en/build-with-claude/handling-stop-reasons">Handling stop reasons</a>
+</footer>
+
+</body>
+</html>
