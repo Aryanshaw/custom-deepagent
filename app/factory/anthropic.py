@@ -1,10 +1,10 @@
-from collections.abc import AsyncGenerator, Callable, Generator
+from collections.abc import AsyncGenerator, Callable, Generator, Sequence
 from typing import Any, cast
 
 from anthropic import Anthropic, AsyncAnthropic, omit
 from anthropic.types import MessageParam, OutputConfigParam, ToolUnionParam
 
-from app.agent.tool_registry import call_tool, tools_for
+from app.agent.tool_registry import call_tool, resolve_tools, tools_for
 from app.config.logger import logger
 from app.factory.factory import LLM, ChatMessage, Effort, LoopInterrupted
 
@@ -29,7 +29,7 @@ class AnthropicAgent(LLM):
         model: str,
         history: list[ChatMessage] | None = None,
         image_urls: list[str] | None = None,
-        tools: list[dict[str, Any]] | None = None,
+        tools: Sequence[Callable[..., Any] | dict[str, Any]] | None = None,
         temperature: float = 0.7,
         max_tokens: int = 16000,
         effort: Effort | None = None,
@@ -52,12 +52,16 @@ class AnthropicAgent(LLM):
             history_msgs: list[dict[str, Any]] = [dict(m) for m in history] if history else []
             history_msgs.append({"role": "user", "content": content})
             messages = cast(list[MessageParam], history_msgs)
-            resolved_tools = tools if tools is not None else tools_for("anthropic")
+            resolved_tools = resolve_tools(tools, "anthropic") if tools is not None else tools_for("anthropic")
             tools_param = cast(list[ToolUnionParam], resolved_tools) if resolved_tools else omit
             output_config = cast(OutputConfigParam, {"effort": effort}) if effort is not None else omit
 
-            # streaming + tool loop is out of scope for now — return raw text stream
-            if stream:
+            # tools + true token streaming isn't wired (a tool_use block arrives
+            # whole, but reconstructing it requires buffering the stream anyway)
+            # — only take the raw-stream shortcut when there are no tools to call.
+            effective_stream = stream and not resolved_tools
+
+            if effective_stream:
 
                 def _stream_generator() -> Generator[str, None, None]:
                     with self.client.messages.stream(
@@ -71,6 +75,15 @@ class AnthropicAgent(LLM):
                         yield from s.text_stream
 
                 return _stream_generator()
+
+            def _as_result(text: str) -> str | Generator[str, None, None]:
+                if stream and not effective_stream:
+
+                    def _one_shot() -> Generator[str, None, None]:
+                        yield text
+
+                    return _one_shot()
+                return text
 
             for _ in range(max_iterations):
                 if on_iteration is not None and not on_iteration():
@@ -86,11 +99,11 @@ class AnthropicAgent(LLM):
                 )
 
                 if response.stop_reason != "tool_use":
-                    return next((b.text for b in response.content if b.type == "text"), "")
+                    return _as_result(next((b.text for b in response.content if b.type == "text"), ""))
 
                 tool_use_blocks = [b for b in response.content if b.type == "tool_use"]
                 if not tool_use_blocks:
-                    return next((b.text for b in response.content if b.type == "text"), "")
+                    return _as_result(next((b.text for b in response.content if b.type == "text"), ""))
 
                 messages.append(cast(MessageParam, {"role": "assistant", "content": response.content}))
                 tool_results = [
@@ -117,7 +130,7 @@ class AnthropicAgent(LLM):
         model: str,
         history: list[ChatMessage] | None = None,
         image_urls: list[str] | None = None,
-        tools: list[dict[str, Any]] | None = None,
+        tools: Sequence[Callable[..., Any] | dict[str, Any]] | None = None,
         temperature: float = 0.7,
         max_tokens: int = 16000,
         effort: Effort | None = None,
@@ -140,12 +153,13 @@ class AnthropicAgent(LLM):
             history_msgs: list[dict[str, Any]] = [dict(m) for m in history] if history else []
             history_msgs.append({"role": "user", "content": content})
             messages = cast(list[MessageParam], history_msgs)
-            resolved_tools = tools if tools is not None else tools_for("anthropic")
+            resolved_tools = resolve_tools(tools, "anthropic") if tools is not None else tools_for("anthropic")
             tools_param = cast(list[ToolUnionParam], resolved_tools) if resolved_tools else omit
             output_config = cast(OutputConfigParam, {"effort": effort}) if effort is not None else omit
 
-            # streaming + tool loop is out of scope for now — return raw text stream
-            if stream:
+            effective_stream = stream and not resolved_tools
+
+            if effective_stream:
 
                 async def _a_stream_generator() -> AsyncGenerator[str, None]:
                     async with self.aclient.messages.stream(
@@ -161,6 +175,15 @@ class AnthropicAgent(LLM):
 
                 return _a_stream_generator()
 
+            def _as_result(text: str) -> str | AsyncGenerator[str, None]:
+                if stream and not effective_stream:
+
+                    async def _one_shot() -> AsyncGenerator[str, None]:
+                        yield text
+
+                    return _one_shot()
+                return text
+
             for _ in range(max_iterations):
                 if on_iteration is not None and not on_iteration():
                     raise LoopInterrupted
@@ -175,11 +198,11 @@ class AnthropicAgent(LLM):
                 )
 
                 if response.stop_reason != "tool_use":
-                    return next((b.text for b in response.content if b.type == "text"), "")
+                    return _as_result(next((b.text for b in response.content if b.type == "text"), ""))
 
                 tool_use_blocks = [b for b in response.content if b.type == "tool_use"]
                 if not tool_use_blocks:
-                    return next((b.text for b in response.content if b.type == "text"), "")
+                    return _as_result(next((b.text for b in response.content if b.type == "text"), ""))
 
                 messages.append(cast(MessageParam, {"role": "assistant", "content": response.content}))
                 tool_results = [

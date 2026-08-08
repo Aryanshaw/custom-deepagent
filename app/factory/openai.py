@@ -1,10 +1,10 @@
 import json
-from collections.abc import AsyncGenerator, Callable, Generator
+from collections.abc import AsyncGenerator, Callable, Generator, Sequence
 from typing import Any, cast
 
 from openai import AsyncOpenAI, AsyncStream, OpenAI, Stream
 
-from app.agent.tool_registry import call_tool, tools_for
+from app.agent.tool_registry import call_tool, resolve_tools, tools_for
 from app.config.logger import logger
 from app.factory.factory import LLM, ChatMessage, Effort, LoopInterrupted, to_reasoning_effort
 
@@ -28,7 +28,7 @@ class OpenAIAgent(LLM):
         model: str,
         history: list[ChatMessage] | None = None,
         image_urls: list[str] | None = None,
-        tools: list[dict[str, Any]] | None = None,
+        tools: Sequence[Callable[..., Any] | dict[str, Any]] | None = None,
         temperature: float = 0.7,
         max_tokens: int = 16000,
         effort: Effort | None = None,
@@ -56,18 +56,33 @@ class OpenAIAgent(LLM):
                 messages.extend(history)
             messages.append({"role": "user", "content": content})
 
+            resolved_tools = resolve_tools(tools, "openai") if tools is not None else tools_for("openai")
+            # tools + true token streaming isn't wired (tool_calls arrive as
+            # fragmented deltas across chunks and need reassembly) — when
+            # tools are in play, run the real loop below and hand back a
+            # single-chunk generator instead of the raw SDK stream.
+            effective_stream = stream and not resolved_tools
+
             kwargs: dict[str, Any] = {
                 "model": model,
                 "messages": messages,
                 "temperature": temperature,
                 "max_tokens": max_tokens,
-                "stream": stream,
+                "stream": effective_stream,
             }
-            resolved_tools = tools if tools is not None else tools_for("openai")
             if resolved_tools:
                 kwargs["tools"] = resolved_tools
             if effort is not None:
                 kwargs["reasoning_effort"] = to_reasoning_effort(effort)
+
+            def _as_result(text: str) -> str | Generator[str, None, None]:
+                if stream and not effective_stream:
+
+                    def _one_shot() -> Generator[str, None, None]:
+                        yield text
+
+                    return _one_shot()
+                return text
 
             for _ in range(max_iterations):
                 if on_iteration is not None and not on_iteration():
@@ -75,7 +90,6 @@ class OpenAIAgent(LLM):
 
                 response = self.client.chat.completions.create(**kwargs)
 
-                # streaming + tool loop is out of scope for now — return raw text stream
                 if isinstance(response, Stream):
 
                     def _stream_generator(
@@ -91,13 +105,13 @@ class OpenAIAgent(LLM):
 
                 # if response is not a tool call return the message content
                 if response.choices[0].finish_reason != "tool_calls":
-                    return message.content or ""
+                    return _as_result(message.content or "")
 
                 tool_calls = message.tool_calls
                 if not tool_calls:
-                    return message.content or ""
+                    return _as_result(message.content or "")
 
-                messages.append(cast(ChatMessage, message.model_dump()))
+                messages.append(cast(ChatMessage, message.model_dump(exclude_none=True)))
 
                 # call tools for the model
                 for tool_call in tool_calls:
@@ -129,7 +143,7 @@ class OpenAIAgent(LLM):
         model: str,
         history: list[ChatMessage] | None = None,
         image_urls: list[str] | None = None,
-        tools: list[dict[str, Any]] | None = None,
+        tools: Sequence[Callable[..., Any] | dict[str, Any]] | None = None,
         temperature: float = 0.7,
         max_tokens: int = 16000,
         effort: Effort | None = None,
@@ -157,18 +171,29 @@ class OpenAIAgent(LLM):
                 messages.extend(history)
             messages.append({"role": "user", "content": content})
 
+            resolved_tools = resolve_tools(tools, "openai") if tools is not None else tools_for("openai")
+            effective_stream = stream and not resolved_tools
+
             kwargs: dict[str, Any] = {
                 "model": model,
                 "messages": messages,
                 "temperature": temperature,
                 "max_tokens": max_tokens,
-                "stream": stream,
+                "stream": effective_stream,
             }
-            resolved_tools = tools if tools is not None else tools_for("openai")
             if resolved_tools:
                 kwargs["tools"] = resolved_tools
             if effort is not None:
                 kwargs["reasoning_effort"] = to_reasoning_effort(effort)
+
+            def _as_result(text: str) -> str | AsyncGenerator[str, None]:
+                if stream and not effective_stream:
+
+                    async def _one_shot() -> AsyncGenerator[str, None]:
+                        yield text
+
+                    return _one_shot()
+                return text
 
             for _ in range(max_iterations):
                 if on_iteration is not None and not on_iteration():
@@ -176,7 +201,6 @@ class OpenAIAgent(LLM):
 
                 response = await self.aclient.chat.completions.create(**kwargs)
 
-                # streaming + tool loop is out of scope for now — return raw text stream
                 if isinstance(response, AsyncStream):
 
                     async def _a_stream_generator(
@@ -191,13 +215,13 @@ class OpenAIAgent(LLM):
                 message = response.choices[0].message
 
                 if response.choices[0].finish_reason != "tool_calls":
-                    return message.content or ""
+                    return _as_result(message.content or "")
 
                 tool_calls = message.tool_calls
                 if not tool_calls:
-                    return message.content or ""
+                    return _as_result(message.content or "")
 
-                messages.append(cast(ChatMessage, message.model_dump()))
+                messages.append(cast(ChatMessage, message.model_dump(exclude_none=True)))
                 for tool_call in tool_calls:
                     if tool_call.type != "function":
                         # custom (freeform) tool calls aren't wired up yet

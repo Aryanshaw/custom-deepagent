@@ -1,4 +1,5 @@
 from app.agent.deep_agent import DeepAgent
+from app.agent.tools.testing_tool import add_two_numbers
 
 
 def main():
@@ -18,7 +19,9 @@ def main():
 
             print("\nDeepAgent: ", end="", flush=True)
 
-            response_stream = dp_agent._invoke(prompt, model="llama-3.3-70b-versatile", history=history, max_tokens=2000, stream=True)
+            tools = [add_two_numbers]  # register tools here
+
+            response_stream = dp_agent._invoke(prompt, model="llama-3.3-70b-versatile", history=history, max_tokens=2000, stream=True, tools=tools)
 
             # Collect the complete response while printing chunks
             response_parts = []

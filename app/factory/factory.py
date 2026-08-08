@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from collections.abc import AsyncGenerator, Callable, Generator
+from collections.abc import AsyncGenerator, Callable, Generator, Sequence
 from typing import Any, Literal, NotRequired, TypedDict
 
 from app.config.config import Config
@@ -44,7 +44,7 @@ class LLM(ABC):
         model: str,
         history: list[ChatMessage] | None = None,
         image_urls: list[str] | None = None,
-        tools: list[dict[str, Any]] | None = None,
+        tools: Sequence[Callable[..., Any] | dict[str, Any]] | None = None,
         temperature: float = 0.7,
         max_tokens: int = 16000,
         effort: Effort | None = None,
@@ -62,7 +62,7 @@ class LLM(ABC):
         model: str,
         history: list[ChatMessage] | None = None,
         image_urls: list[str] | None = None,
-        tools: list[dict[str, Any]] | None = None,
+        tools: Sequence[Callable[..., Any] | dict[str, Any]] | None = None,
         temperature: float = 0.7,
         max_tokens: int = 16000,
         effort: Effort | None = None,

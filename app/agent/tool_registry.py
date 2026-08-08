@@ -18,7 +18,7 @@ from typing import TYPE_CHECKING, Any, Literal, get_type_hints
 from pydantic import create_model
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
+    from collections.abc import Callable, Sequence
 
 Provider = Literal["anthropic", "openai", "groq"]
 
@@ -53,6 +53,7 @@ class ToolSpec:
 
 
 _REGISTRY: dict[str, ToolSpec] = {}
+TOOL_SPEC_ATTR = "__tool_spec__"
 
 
 def _build_schema(func: Callable[..., Any]) -> dict[str, Any]:
@@ -97,9 +98,34 @@ def tool(
         if not spec.description:
             raise ValueError(f"tool '{spec.name}' needs a docstring or description=...")
         _REGISTRY[spec.name] = spec
+        setattr(f, TOOL_SPEC_ATTR, spec)  # so the function itself carries its spec
         return f
 
     return decorator(func) if func is not None else decorator
+
+
+def resolve_tools(
+    tools: Sequence[Callable[..., Any] | dict[str, Any]] | None,
+    provider: Provider,
+) -> list[dict[str, Any]]:
+    """Convert a mixed list of @tool-decorated functions and/or raw provider
+    dicts into the shape `provider` expects. A bare dict passes through
+    unchanged (for tools you built by hand or got from elsewhere, e.g. MCP).
+    """
+    if not tools:
+        return []
+    resolved: list[dict[str, Any]] = []
+    for item in tools:
+        if isinstance(item, dict):
+            resolved.append(item)
+            continue
+        spec = getattr(item, TOOL_SPEC_ATTR, None)
+        if spec is None:
+            raise TypeError(
+                f"{item!r} isn't a @tool-decorated function and isn't a provider dict either"
+            )
+        resolved.append(spec.to_anthropic() if provider == "anthropic" else spec.to_openai())
+    return resolved
 
 
 def tools_for(provider: Provider) -> list[dict[str, Any]]:
