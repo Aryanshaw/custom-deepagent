@@ -121,6 +121,7 @@ class LLM(ABC):
         stream: bool = False,
         max_iterations: int = 20,
         on_iteration: Callable[[], bool] | None = None,
+        cache: bool = False
     ) -> tuple[str | Generator[str, None, None], list[Turn]]:
         """Returns (response, new_turns).
 
@@ -154,6 +155,7 @@ class LLM(ABC):
         stream: bool = False,
         max_iterations: int = 20,
         on_iteration: Callable[[], bool] | None = None,
+        cache: bool = False
     ) -> tuple[str | AsyncGenerator[str, None], list[Turn]]:
         """Returns (response, new_turns) — see `run` for the contract."""
         pass
@@ -161,7 +163,7 @@ class LLM(ABC):
 
 class LLMFactory:
     @staticmethod
-    def register(provider: providers) -> LLM:
+    def register(provider: providers, prompt_caching:bool = False) -> LLM:
         # imported here, not at module top — anthropic.py/groq.py/openai.py
         # import LLM/Turn/Effort from this module, so importing them
         # back at the top of this file is a circular import

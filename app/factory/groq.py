@@ -38,6 +38,7 @@ class GroqAgent(LLM):
         stream: bool = False,
         max_iterations: int = 20,
         on_iteration: Callable[[], bool] | None = None,
+        cache: bool = False,
     ) -> tuple[str | Generator[str, None, None], list[Turn]]:
         try:
             user_content: list[dict[str, Any]] = [{"type": "text", "text": user_prompt}]
@@ -177,6 +178,7 @@ class GroqAgent(LLM):
         stream: bool = False,
         max_iterations: int = 20,
         on_iteration: Callable[[], bool] | None = None,
+        cache: bool = False,
     ) -> tuple[str | AsyncGenerator[str, None], list[Turn]]:
         try:
             user_content: list[dict[str, Any]] = [{"type": "text", "text": user_prompt}]

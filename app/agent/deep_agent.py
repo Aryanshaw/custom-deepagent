@@ -35,6 +35,7 @@ class DeepAgent:
         max_tokens: int = 16000,
         effort: Effort | None = None,
         stream: bool = False,
+        cache: bool =False
     ) -> tuple[str | Generator[str, None, None], list[Turn]]:
         """Returns (response, new_turns) — `history` is read-only, never mutated.
 
@@ -57,6 +58,7 @@ class DeepAgent:
                 effort=effort,
                 stream=stream,
                 max_iterations=self.max_iterations,
+                cache=cache
             )
         except Exception as e:
             logger.error(f"Error in DeepAgent._invoke: {e}")
@@ -73,6 +75,7 @@ class DeepAgent:
         max_tokens: int = 16000,
         effort: Effort | None = None,
         stream: bool = False,
+        cache: bool = False
     ) -> tuple[str | AsyncGenerator[str, None], list[Turn]]:
         """Returns (response, new_turns) — `history` is read-only, never mutated.
 
@@ -95,6 +98,7 @@ class DeepAgent:
                 effort=effort,
                 stream=stream,
                 max_iterations=self.max_iterations,
+                cache=cache
             )
         except Exception as e:
             logger.error(f"Error in DeepAgent._ainvoke: {e}")

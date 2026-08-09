@@ -2,7 +2,7 @@ from collections.abc import AsyncGenerator, Callable, Generator, Sequence
 from typing import Any, cast
 
 from anthropic import Anthropic, AsyncAnthropic, BadRequestError, omit
-from anthropic.types import ContentBlock, MessageParam, OutputConfigParam, ToolUnionParam
+from anthropic.types import CacheControlEphemeralParam, ContentBlock, MessageParam, OutputConfigParam, ToolUnionParam
 
 from app.agent.tool_registry import call_tool, resolve_tools, tools_for
 from app.config.logger import logger
@@ -85,6 +85,7 @@ class AnthropicAgent(LLM):
         stream: bool = False,
         max_iterations: int = 20,
         on_iteration: Callable[[], bool] | None = None,
+        cache: bool = False,
     ) -> tuple[str | Generator[str, None, None], list[Turn]]:
         try:
             _ = temperature
@@ -120,6 +121,7 @@ class AnthropicAgent(LLM):
                         messages=messages,
                         tools=tools_param,
                         output_config=output_config,
+                        cache_control=CacheControlEphemeralParam(type="ephemeral") if cache else omit,
                     ) as s:
                         for text in s.text_stream:
                             parts.append(text)
@@ -149,6 +151,7 @@ class AnthropicAgent(LLM):
                         messages=messages,
                         tools=tools_param,
                         output_config=output_config,
+                        cache_control=CacheControlEphemeralParam(type="ephemeral") if cache else omit,
                     )
                 except BadRequestError as e:
                     correction = tool_schema_correction(e.body, str(e))
@@ -220,6 +223,7 @@ class AnthropicAgent(LLM):
         stream: bool = False,
         max_iterations: int = 20,
         on_iteration: Callable[[], bool] | None = None,
+        cache: bool = False,
     ) -> tuple[str | AsyncGenerator[str, None], list[Turn]]:
         try:
             _ = temperature
@@ -252,6 +256,7 @@ class AnthropicAgent(LLM):
                         messages=messages,
                         tools=tools_param,
                         output_config=output_config,
+                        cache_control=CacheControlEphemeralParam(type="ephemeral") if cache else omit,
                     ) as s:
                         async for text in s.text_stream:
                             parts.append(text)
@@ -281,6 +286,7 @@ class AnthropicAgent(LLM):
                         messages=messages,
                         tools=tools_param,
                         output_config=output_config,
+                        cache_control=CacheControlEphemeralParam(type="ephemeral") if cache else omit,
                     )
                 except BadRequestError as e:
                     correction = tool_schema_correction(e.body, str(e))
