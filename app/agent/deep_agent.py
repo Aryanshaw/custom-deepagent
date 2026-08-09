@@ -1,10 +1,10 @@
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Generator, Sequence
 from typing import Any
 
 from app.agent.prompt.deepagent_systemprompt import SYSTEM_PROMPT
 from app.agent.tool_registry import discover_tools
 from app.config.logger import logger
-from app.factory.factory import LLM, ChatMessage, Effort, LLMFactory, providers
+from app.factory.factory import LLM, Effort, LLMFactory, Turn, providers
 
 
 class DeepAgent:
@@ -22,14 +22,21 @@ class DeepAgent:
         self,
         prompt: str,
         model: str,
-        history: list[ChatMessage] | None = None,
+        history: list[Turn] | None = None,
         image_urls: list[str] | None = None,
         tools: Sequence[Callable[..., Any] | dict[str, Any]] | None = None,
         temperature: float = 0.7,
         max_tokens: int = 16000,
         effort: Effort | None = None,
         stream: bool = False,
-    ):
+    ) -> tuple[str | Generator[str, None, None], list[Turn]]:
+        """Returns (response, new_turns) — `history` is read-only, never mutated.
+
+        `new_turns` is a list of provider-agnostic `Turn` dicts (role
+        user/assistant/tool, each JSON-serializable) — store each one as its
+        own record however you like, e.g. one DB row per turn. Fold them
+        into your own history store: `history.extend(new_turns)`.
+        """
         try:
             discover_tools()  # import app/agent/tools/*.py so @tool functions register
             return self.llm.run(

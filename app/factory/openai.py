@@ -1,12 +1,18 @@
 import json
 from collections.abc import AsyncGenerator, Callable, Generator, Sequence
-from typing import Any, cast
+from typing import Any
 
-from openai import AsyncOpenAI, AsyncStream, OpenAI, Stream
+from openai import AsyncOpenAI, AsyncStream, BadRequestError, OpenAI, Stream
 
 from app.agent.tool_registry import call_tool, resolve_tools, tools_for
 from app.config.logger import logger
-from app.factory.factory import LLM, ChatMessage, Effort, LoopInterrupted, to_reasoning_effort
+from app.factory.factory import LLM, Effort, LoopInterrupted, Turn, to_reasoning_effort, tool_schema_correction
+from app.factory.openai_compat import (
+    assistant_message_to_turn,
+    tool_result_turn,
+    turns_to_messages,
+    user_turn,
+)
 
 
 class OpenAIAgent(LLM):
@@ -26,7 +32,7 @@ class OpenAIAgent(LLM):
         system_prompt: str,
         user_prompt: str,
         model: str,
-        history: list[ChatMessage] | None = None,
+        history: list[Turn] | None = None,
         image_urls: list[str] | None = None,
         tools: Sequence[Callable[..., Any] | dict[str, Any]] | None = None,
         temperature: float = 0.7,
@@ -35,26 +41,19 @@ class OpenAIAgent(LLM):
         stream: bool = False,
         max_iterations: int = 20,
         on_iteration: Callable[[], bool] | None = None,
-    ) -> str | Generator[str, None, None]:
+    ) -> tuple[str | Generator[str, None, None], list[Turn]]:
         try:
-            content: list[dict[str, Any]] = [{"type": "text", "text": user_prompt}]
-
+            user_content: list[dict[str, Any]] = [{"type": "text", "text": user_prompt}]
             if image_urls:
                 for image_url in image_urls:
-                    content.append(
-                        {
-                            "type": "image_url",
-                            "image_url": {
-                                "url": image_url,
-                            },
-                        }
-                    )
-            messages: list[ChatMessage] = [
-                {"role": "system", "content": system_prompt},
-            ]
+                    user_content.append({"type": "image_url", "image_url": {"url": image_url}})
+
+            messages: list[dict[str, Any]] = [{"role": "system", "content": system_prompt}]
             if history:
-                messages.extend(history)
-            messages.append({"role": "user", "content": content})
+                messages.extend(turns_to_messages(history))
+            messages.append({"role": "user", "content": user_content})
+
+            new_turns: list[Turn] = [user_turn(user_prompt)]
 
             resolved_tools = resolve_tools(tools, "openai") if tools is not None else tools_for("openai")
             # tools + true token streaming isn't wired (tool_calls arrive as
@@ -88,44 +87,76 @@ class OpenAIAgent(LLM):
                 if on_iteration is not None and not on_iteration():
                     raise LoopInterrupted
 
-                response = self.client.chat.completions.create(**kwargs)
+                try:
+                    response = self.client.chat.completions.create(**kwargs)
+                except BadRequestError as e:
+                    correction = tool_schema_correction(e.body, str(e))
+                    if correction is None:
+                        raise  # a real error, not a fixable schema mismatch
+                    messages.append({"role": "user", "content": correction})
+                    new_turns.append({"role": "user", "text": correction})
+                    kwargs["messages"] = messages
+                    continue
 
                 if isinstance(response, Stream):
-
+                    # no tool loop can have run yet when streaming is taken
+                    # (it's only ever the first iteration) — the generator
+                    # appends the final assistant turn once fully consumed;
+                    # read `new_turns` after draining.
                     def _stream_generator(
                         response: Stream[Any] = response,
+                        new_turns: list[Turn] = new_turns,
                     ) -> Generator[str, None, None]:
+                        parts: list[str] = []
                         for chunk in response:
                             if chunk.choices and chunk.choices[0].delta.content:
+                                parts.append(chunk.choices[0].delta.content)
                                 yield chunk.choices[0].delta.content
+                        new_turns.append({"role": "assistant", "text": "".join(parts)})
 
-                    return _stream_generator()
+                    return _stream_generator(), new_turns
 
                 message = response.choices[0].message
 
                 # if response is not a tool call return the message content
                 if response.choices[0].finish_reason != "tool_calls":
-                    return _as_result(message.content or "")
+                    new_turns.append({"role": "assistant", "text": message.content or ""})
+                    return _as_result(message.content or ""), new_turns
 
                 tool_calls = message.tool_calls
                 if not tool_calls:
-                    return _as_result(message.content or "")
+                    new_turns.append({"role": "assistant", "text": message.content or ""})
+                    return _as_result(message.content or ""), new_turns
 
-                messages.append(cast(ChatMessage, message.model_dump(exclude_none=True)))
+                # narrow to function-type calls once — a checker can't carry
+                # a type check across two separate `for` loops, so build the
+                # validated list up front and use it everywhere below.
+                function_calls = [tc for tc in tool_calls if tc.type == "function"]
+                if len(function_calls) != len(tool_calls):
+                    bad = next(tc for tc in tool_calls if tc.type != "function")
+                    # custom (freeform) tool calls aren't wired up yet
+                    raise NotImplementedError(f"unsupported tool_call type: {bad.type}")
 
-                # call tools for the model
-                for tool_call in tool_calls:
-                    if tool_call.type != "function":
-                        # custom (freeform) tool calls aren't wired up yet
-                        raise NotImplementedError(f"unsupported tool_call type: {tool_call.type}")
+                messages.append(message.model_dump(exclude_none=True))
+                new_turns.append(assistant_message_to_turn(message))
 
-                    result = self._call_tool(tool_call.function.name, tool_call.function.arguments)
+                for tool_call in function_calls:
+                    is_error = False
+                    try:
+                        result = self._call_tool(tool_call.function.name, tool_call.function.arguments)
+                    except Exception as tool_error:
+                        result = str(tool_error)
+                        is_error = True
+                    content = f"Error: {result}" if is_error else str(result)
                     messages.append(
                         {
                             "role": "tool",
                             "tool_call_id": tool_call.id,
-                            "content": str(result),
+                            "content": content,
                         }
+                    )
+                    new_turns.append(
+                        tool_result_turn(tool_call.id, tool_call.function.name, result, is_error=is_error)
                     )
                 kwargs["messages"] = messages
 
@@ -141,7 +172,7 @@ class OpenAIAgent(LLM):
         system_prompt: str,
         user_prompt: str,
         model: str,
-        history: list[ChatMessage] | None = None,
+        history: list[Turn] | None = None,
         image_urls: list[str] | None = None,
         tools: Sequence[Callable[..., Any] | dict[str, Any]] | None = None,
         temperature: float = 0.7,
@@ -150,26 +181,19 @@ class OpenAIAgent(LLM):
         stream: bool = False,
         max_iterations: int = 20,
         on_iteration: Callable[[], bool] | None = None,
-    ) -> str | AsyncGenerator[str, None]:
+    ) -> tuple[str | AsyncGenerator[str, None], list[Turn]]:
         try:
-            content: list[dict[str, Any]] = [{"type": "text", "text": user_prompt}]
-
+            user_content: list[dict[str, Any]] = [{"type": "text", "text": user_prompt}]
             if image_urls:
                 for image_url in image_urls:
-                    content.append(
-                        {
-                            "type": "image_url",
-                            "image_url": {
-                                "url": image_url,
-                            },
-                        }
-                    )
-            messages: list[ChatMessage] = [
-                {"role": "system", "content": system_prompt},
-            ]
+                    user_content.append({"type": "image_url", "image_url": {"url": image_url}})
+
+            messages: list[dict[str, Any]] = [{"role": "system", "content": system_prompt}]
             if history:
-                messages.extend(history)
-            messages.append({"role": "user", "content": content})
+                messages.extend(turns_to_messages(history))
+            messages.append({"role": "user", "content": user_content})
+
+            new_turns: list[Turn] = [user_turn(user_prompt)]
 
             resolved_tools = resolve_tools(tools, "openai") if tools is not None else tools_for("openai")
             effective_stream = stream and not resolved_tools
@@ -199,40 +223,69 @@ class OpenAIAgent(LLM):
                 if on_iteration is not None and not on_iteration():
                     raise LoopInterrupted
 
-                response = await self.aclient.chat.completions.create(**kwargs)
+                try:
+                    response = await self.aclient.chat.completions.create(**kwargs)
+                except BadRequestError as e:
+                    correction = tool_schema_correction(e.body, str(e))
+                    if correction is None:
+                        raise
+                    messages.append({"role": "user", "content": correction})
+                    new_turns.append({"role": "user", "text": correction})
+                    kwargs["messages"] = messages
+                    continue
 
                 if isinstance(response, AsyncStream):
 
                     async def _a_stream_generator(
                         response: AsyncStream[Any] = response,
+                        new_turns: list[Turn] = new_turns,
                     ) -> AsyncGenerator[str, None]:
+                        parts: list[str] = []
                         async for chunk in response:
                             if chunk.choices and chunk.choices[0].delta.content:
+                                parts.append(chunk.choices[0].delta.content)
                                 yield chunk.choices[0].delta.content
+                        new_turns.append({"role": "assistant", "text": "".join(parts)})
 
-                    return _a_stream_generator()
+                    return _a_stream_generator(), new_turns
 
                 message = response.choices[0].message
 
                 if response.choices[0].finish_reason != "tool_calls":
-                    return _as_result(message.content or "")
+                    new_turns.append({"role": "assistant", "text": message.content or ""})
+                    return _as_result(message.content or ""), new_turns
 
                 tool_calls = message.tool_calls
                 if not tool_calls:
-                    return _as_result(message.content or "")
+                    new_turns.append({"role": "assistant", "text": message.content or ""})
+                    return _as_result(message.content or ""), new_turns
 
-                messages.append(cast(ChatMessage, message.model_dump(exclude_none=True)))
-                for tool_call in tool_calls:
-                    if tool_call.type != "function":
-                        # custom (freeform) tool calls aren't wired up yet
-                        raise NotImplementedError(f"unsupported tool_call type: {tool_call.type}")
-                    result = self._call_tool(tool_call.function.name, tool_call.function.arguments)
+                function_calls = [tc for tc in tool_calls if tc.type == "function"]
+                if len(function_calls) != len(tool_calls):
+                    bad = next(tc for tc in tool_calls if tc.type != "function")
+                    # custom (freeform) tool calls aren't wired up yet
+                    raise NotImplementedError(f"unsupported tool_call type: {bad.type}")
+
+                messages.append(message.model_dump(exclude_none=True))
+                new_turns.append(assistant_message_to_turn(message))
+
+                for tool_call in function_calls:
+                    is_error = False
+                    try:
+                        result = self._call_tool(tool_call.function.name, tool_call.function.arguments)
+                    except Exception as tool_error:
+                        result = str(tool_error)
+                        is_error = True
+                    content = f"Error: {result}" if is_error else str(result)
                     messages.append(
                         {
                             "role": "tool",
                             "tool_call_id": tool_call.id,
-                            "content": str(result),
+                            "content": content,
                         }
+                    )
+                    new_turns.append(
+                        tool_result_turn(tool_call.id, tool_call.function.name, result, is_error=is_error)
                     )
                 kwargs["messages"] = messages
 

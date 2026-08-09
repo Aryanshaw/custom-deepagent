@@ -21,19 +21,17 @@ def main():
 
             tools = [add_two_numbers]  # register tools here
 
-            response_stream = dp_agent._invoke(prompt, model="llama-3.3-70b-versatile", history=history, max_tokens=2000, stream=True, tools=tools)
-
-            # Collect the complete response while printing chunks
-            response_parts = []
+            response_stream, new_messages = dp_agent._invoke(
+                prompt, model="qwen/qwen3.6-27b", history=history, max_tokens=2000, stream=True, tools=tools
+            )
 
             for chunk in response_stream:
                 print(chunk, end="", flush=True)
-                response_parts.append(chunk)
 
-            response = "".join(response_parts)
-
-            history.append({"role": "user", "content": prompt})
-            history.append({"role": "assistant", "content": response})
+            # `history` is ours — `_invoke` never touches it. `new_messages`
+            # is only fully populated once the stream above is drained
+            # (the final assistant turn is appended as the generator closes).
+            history.extend(new_messages)
 
             print("\n")
         except KeyboardInterrupt:

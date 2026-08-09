@@ -6,9 +6,12 @@ from fastapi import FastAPI
 
 sys.path.append(os.path.abspath(os.path.dirname(__file__)))
 
+from app.config.db import init_db  # noqa: E402
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    init_db()
     # await MongoDB.connect()
     init_routes()
     # await test_runner()
