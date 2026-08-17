@@ -135,11 +135,32 @@ def tools_for(provider: Provider) -> list[dict[str, Any]]:
     return [s.to_openai() for s in specs]  # openai + groq share the function-calling shape
 
 
+_verbose = False
+
+
+def set_verbose(value: bool) -> None:
+    global _verbose
+    _verbose = value
+
+
 def call_tool(name: str, arguments: dict[str, Any]) -> Any:
+    from swarmagent.utils.pretty import print_tool_call, print_tool_result
+
     spec = _REGISTRY.get(name)
     if spec is None:
         raise ValueError(f"unknown tool: {name}")
-    return spec.call(arguments)
+
+    if _verbose:
+        print_tool_call(name, arguments)
+    try:
+        result = spec.call(arguments)
+    except Exception as e:
+        if _verbose:
+            print_tool_result(name, e, is_error=True)
+        raise
+    if _verbose:
+        print_tool_result(name, result, is_error=False)
+    return result
 
 
 _discovered: set[str] = set()

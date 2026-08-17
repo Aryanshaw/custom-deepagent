@@ -1,6 +1,6 @@
 [project]
 name = "swarmagent"
-version = "0.5.0"
+version = "0.6.0"
 description = "SwarmAgent — multi-provider LLM agent with tool calling, caching, and streaming"
 authors = [
     { name = "aryanShaw", email = "aryanrot234@gmail.com" }
