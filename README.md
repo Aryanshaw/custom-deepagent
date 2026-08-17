@@ -1,24 +1,23 @@
-# deeperagent-setup
+# swarmagent
 
-Custom terminal agent built from scratch on top of a pluggable `LLM` factory over
-Anthropic, Groq, and OpenAI. Learning-by-building project for understanding the
-agentic tool-use loop that every agent framework sits on top of: call model →
-check stop reason → run tool calls → append results → repeat.
+Pluggable multi-provider LLM agent (Anthropic, Groq, OpenAI) built from
+scratch around the core agentic tool-use loop: call model → check stop
+reason → run tool calls → append results → repeat.
 
-## Requirements
+Published on TestPyPI as `swarmagent` (dry run — not yet on real PyPI).
 
-- Python >= 3.12
-- [uv](https://docs.astral.sh/uv/)
-- API keys for the providers you use (see below)
-
-## Setup
+## Install
 
 ```bash
-uv sync
-cp .env.example .env   # if present, otherwise create manually
+pip install -i https://test.pypi.org/simple/ swarmagent
 ```
 
-`.env` must define whichever keys the providers you register need:
+The `-i` flag is required because this package currently only exists on
+TestPyPI, a separate index from real `pypi.org`. Once published to real
+PyPI, plain `pip install swarmagent` will work.
+
+Set the env vars for whichever providers you use — `app/config/config.py`
+reads all three at import time:
 
 ```
 GROQ_API_KEY=...
@@ -26,34 +25,7 @@ OPENAI_API_KEY=...
 ANTHROPIC_API_KEY=...
 ```
 
-`app/config/config.py` loads these at import time and raises if a required key
-is missing.
-
-## Run
-
-```bash
-python -m app.agent.cli
-```
-
-Starts an interactive REPL backed by `DeepAgent`. Type `exit` to quit.
-
-## Use as a library
-
-Published as `swarmagent` (currently on TestPyPI as a dry run — not yet on
-real PyPI).
-
-```bash
-pip install -i https://test.pypi.org/simple/ swarmagent
-```
-
-The `-i` flag is required because this package only exists on TestPyPI right
-now, a separate index from the real `pypi.org` that `pip install swarmagent`
-checks by default. Once published to real PyPI, plain `pip install
-swarmagent` will work.
-
-The required env vars (`GROQ_API_KEY`, `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`)
-must be set wherever you install it — `app/config/config.py` reads them at
-import time.
+## Usage
 
 ```python
 from app.agent.deep_agent import DeepAgent
@@ -73,8 +45,14 @@ for chunk in response_stream:
 ```
 
 `history` is a list of `Turn` objects you own — `_invoke` reads it but never
-mutates it; append `new_turns` yourself to carry conversation state forward
-(see `main.py` for a full REPL loop example).
+mutates it; append `new_turns` yourself to carry conversation state forward.
+
+## Local development
+
+```bash
+uv sync
+python -m app.agent.cli   # interactive REPL, type 'exit' to quit
+```
 
 ## Project layout
 
@@ -87,7 +65,6 @@ app/
 assets/        shared CSS for lessons/reference docs
 lessons/       interactive HTML lessons on agent internals
 reference/     cheat sheets (multi-provider agentic loop, etc.)
-learning-records/
 ```
 
 ## Architecture
@@ -101,6 +78,15 @@ learning-records/
   provider needing to know the interruption policy
 - Provider-agnostic tool registry (`app/agent/tool_registry.py`) that
   generates per-provider tool schemas and dispatches calls
+
+## Releasing
+
+Publishing runs via `.github/workflows/publish.yml` on GitHub Actions,
+triggered by a GitHub Release (OIDC trusted publishing, no token needed):
+
+1. Bump `version` in `pyproject.toml`
+2. Commit and push
+3. `gh release create vX.Y.Z`
 
 ## Status
 
