@@ -1,5 +1,5 @@
 [project]
-name = "swarmagent-py"
+name = "swarmagent"
 version = "0.1.0"
 description = "DeepAgent — multi-provider LLM agent with tool calling, caching, and streaming"
 authors = [
