@@ -67,7 +67,7 @@ class OpenAIAgent(LLM):
                 "model": model,
                 "messages": messages,
                 "temperature": temperature,
-                "max_tokens": max_tokens,
+                "max_completion_tokens": max_tokens,
                 "stream": effective_stream,
             }
             if resolved_tools:
@@ -207,7 +207,7 @@ class OpenAIAgent(LLM):
                 "model": model,
                 "messages": messages,
                 "temperature": temperature,
-                "max_tokens": max_tokens,
+                "max_completion_tokens": max_tokens,
                 "stream": effective_stream,
             }
             if resolved_tools:
