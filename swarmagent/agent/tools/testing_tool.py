@@ -1,5 +1,5 @@
-from app.agent.tool_registry import tool
-from app.config.logger import logger
+from swarmagent.agent.tool_registry import tool
+from swarmagent.config.logger import logger
 
 
 @tool

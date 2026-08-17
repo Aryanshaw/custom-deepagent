@@ -4,9 +4,9 @@ from typing import Any, cast
 from anthropic import Anthropic, AsyncAnthropic, BadRequestError, omit
 from anthropic.types import CacheControlEphemeralParam, ContentBlock, MessageParam, OutputConfigParam, ToolUnionParam
 
-from app.agent.tool_registry import call_tool, resolve_tools, tools_for
-from app.config.logger import logger
-from app.factory.factory import LLM, Effort, LoopInterrupted, ToolCall, Turn, tool_schema_correction
+from swarmagent.agent.tool_registry import call_tool, resolve_tools, tools_for
+from swarmagent.config.logger import logger
+from swarmagent.factory.factory import LLM, Effort, LoopInterrupted, ToolCall, Turn, tool_schema_correction
 
 
 def _turn_to_message(turn: Turn) -> MessageParam:

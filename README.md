@@ -16,7 +16,7 @@ The `-i` flag is required because this package currently only exists on
 TestPyPI, a separate index from real `pypi.org`. Once published to real
 PyPI, plain `pip install swarmagent` will work.
 
-Set the env vars for whichever providers you use — `app/config/config.py`
+Set the env vars for whichever providers you use — `swarmagent/config/config.py`
 reads all three at import time:
 
 ```
@@ -28,9 +28,9 @@ ANTHROPIC_API_KEY=...
 ## Usage
 
 ```python
-from app.agent.deep_agent import DeepAgent
+from swarmagent import SwarmAgent
 
-agent = DeepAgent("groq")
+agent = SwarmAgent("groq")
 
 response_stream, new_turns = agent._invoke(
     "hello",
@@ -51,14 +51,14 @@ mutates it; append `new_turns` yourself to carry conversation state forward.
 
 ```bash
 uv sync
-python -m app.agent.cli   # interactive REPL, type 'exit' to quit
+python -m swarmagent.agent.cli   # interactive REPL, type 'exit' to quit
 ```
 
 ## Project layout
 
 ```
-app/
-  agent/       DeepAgent, CLI entrypoint, system prompt, tool registry, tools
+swarmagent/
+  agent/       SwarmAgent, CLI entrypoint, system prompt, tool registry, tools
   config/      env config + logging
   factory/     LLM abstract interface + Anthropic/Groq/OpenAI implementations
   utils/
@@ -71,12 +71,12 @@ reference/     cheat sheets (multi-provider agentic loop, etc.)
 
 `LLMFactory.register(provider)` returns a concrete `LLM` implementation
 (`AnthropicAgent` / `GroqAgent` / `OpenAIAgent`), all implementing the same
-`run` / `a_run` interface defined in `app/factory/factory.py`:
+`run` / `a_run` interface defined in `swarmagent/factory/factory.py`:
 
 - Manual tool-calling loop with a `max_iterations` safety cap
 - `on_iteration` hook so callers can interrupt the loop mid-run without the
   provider needing to know the interruption policy
-- Provider-agnostic tool registry (`app/agent/tool_registry.py`) that
+- Provider-agnostic tool registry (`swarmagent/agent/tool_registry.py`) that
   generates per-provider tool schemas and dispatches calls
 
 ## Releasing

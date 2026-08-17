@@ -1,9 +1,9 @@
-from app.agent.deep_agent import DeepAgent
-from app.agent.tools.testing_tool import add_two_numbers
+from swarmagent.agent.swarm_agent import SwarmAgent
+from swarmagent.agent.tools.testing_tool import add_two_numbers
 
 
 def main():
-    dp_agent = DeepAgent("groq")
+    dp_agent = SwarmAgent("groq")
     print("Agent started. Type 'exit' to quit.\n")
     history = []
 
@@ -17,7 +17,7 @@ def main():
             if not prompt.strip():
                 continue
 
-            print("\nDeepAgent: ", end="", flush=True)
+            print("\nSwarmAgent: ", end="", flush=True)
 
             tools = [add_two_numbers]  # register tools here
 

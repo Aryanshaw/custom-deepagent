@@ -9,7 +9,7 @@ dicts directly; go through here instead.
 import json
 from typing import Any
 
-from app.factory.factory import ToolCall, Turn
+from swarmagent.factory.factory import ToolCall, Turn
 
 
 def turn_to_message(turn: Turn) -> dict[str, Any]:

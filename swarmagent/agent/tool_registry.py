@@ -145,10 +145,10 @@ def call_tool(name: str, arguments: dict[str, Any]) -> Any:
 _discovered: set[str] = set()
 
 
-def discover_tools(package: str = "app.agent.tools") -> None:
+def discover_tools(package: str = "swarmagent.agent.tools") -> None:
     """Import every module in `package` so its @tool-decorated functions register.
 
-    Safe to call more than once (e.g. once per DeepAgent instance) — each
+    Safe to call more than once (e.g. once per SwarmAgent instance) — each
     package is only walked and imported the first time.
     """
     if package in _discovered:

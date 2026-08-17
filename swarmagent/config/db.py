@@ -1,6 +1,6 @@
 """SQLite storage for conversation turns.
 
-One row per `Turn` (see `app.factory.factory.Turn`) — same shape regardless
+One row per `Turn` (see `swarmagent.factory.factory.Turn`) — same shape regardless
 of which provider produced it, so a conversation can switch providers
 mid-stream without a storage-format problem.
 """
@@ -9,7 +9,7 @@ import json
 import sqlite3
 from pathlib import Path
 
-from app.factory.factory import Turn
+from swarmagent.factory.factory import Turn
 
 DB_PATH = Path(__file__).resolve().parent.parent.parent / "chat.db"
 

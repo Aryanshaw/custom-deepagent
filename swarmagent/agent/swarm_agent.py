@@ -1,13 +1,13 @@
 from collections.abc import AsyncGenerator, Callable, Generator, Sequence
 from typing import Any
 
-from app.agent.prompt.deepagent_systemprompt import SYSTEM_PROMPT
-from app.agent.tool_registry import discover_tools
-from app.config.logger import logger
-from app.factory.factory import LLM, Effort, LLMFactory, Turn, providers
+from swarmagent.agent.prompt.swarmagent_systemprompt import SYSTEM_PROMPT
+from swarmagent.agent.tool_registry import discover_tools
+from swarmagent.config.logger import logger
+from swarmagent.factory.factory import LLM, Effort, LLMFactory, Turn, providers
 
 
-class DeepAgent:
+class SwarmAgent:
     BASE_AGENT_PROMPT = SYSTEM_PROMPT
 
     def __init__(self, provider: providers, max_iterations: int = 20):
@@ -61,7 +61,7 @@ class DeepAgent:
                 cache=cache
             )
         except Exception as e:
-            logger.error(f"Error in DeepAgent._invoke: {e}")
+            logger.error(f"Error in SwarmAgent._invoke: {e}")
             raise e
 
     async def _ainvoke(
@@ -101,5 +101,5 @@ class DeepAgent:
                 cache=cache
             )
         except Exception as e:
-            logger.error(f"Error in DeepAgent._ainvoke: {e}")
+            logger.error(f"Error in SwarmAgent._ainvoke: {e}")
             raise e

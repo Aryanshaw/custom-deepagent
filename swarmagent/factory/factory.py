@@ -2,7 +2,7 @@ from abc import ABC, abstractmethod
 from collections.abc import AsyncGenerator, Callable, Generator, Sequence
 from typing import Any, Literal, NotRequired, TypedDict
 
-from app.config.config import Config
+from swarmagent.config.config import Config
 
 Role = Literal["system", "user", "assistant", "tool"]
 Effort = Literal["low", "medium", "high", "xhigh", "max"]
@@ -169,15 +169,15 @@ class LLMFactory:
         # back at the top of this file is a circular import
         match provider:
             case "openai":
-                from app.factory.openai import OpenAIAgent
+                from swarmagent.factory.openai import OpenAIAgent
 
                 return OpenAIAgent(api_key=Config.OPENAI_API_KEY)
             case "groq":
-                from app.factory.groq import GroqAgent
+                from swarmagent.factory.groq import GroqAgent
 
                 return GroqAgent(api_key=Config.GROQ_API_KEY)
             case "anthropic":
-                from app.factory.anthropic import AnthropicAgent
+                from swarmagent.factory.anthropic import AnthropicAgent
 
                 return AnthropicAgent(api_key=Config.ANTHROPIC_API_KEY)
             case _:

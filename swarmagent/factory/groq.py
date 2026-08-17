@@ -4,10 +4,10 @@ from typing import Any
 
 from groq import AsyncGroq, AsyncStream, BadRequestError, Groq, Stream
 
-from app.agent.tool_registry import call_tool, resolve_tools, tools_for
-from app.config.logger import logger
-from app.factory.factory import LLM, Effort, LoopInterrupted, Turn, to_reasoning_effort, tool_schema_correction
-from app.factory.openai_compat import (
+from swarmagent.agent.tool_registry import call_tool, resolve_tools, tools_for
+from swarmagent.config.logger import logger
+from swarmagent.factory.factory import LLM, Effort, LoopInterrupted, Turn, to_reasoning_effort, tool_schema_correction
+from swarmagent.factory.openai_compat import (
     assistant_message_to_turn,
     tool_result_turn,
     turns_to_messages,
