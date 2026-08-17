@@ -37,6 +37,45 @@ python -m app.agent.cli
 
 Starts an interactive REPL backed by `DeepAgent`. Type `exit` to quit.
 
+## Use as a library
+
+Published as `swarmagent` (currently on TestPyPI as a dry run — not yet on
+real PyPI).
+
+```bash
+pip install -i https://test.pypi.org/simple/ swarmagent
+```
+
+The `-i` flag is required because this package only exists on TestPyPI right
+now, a separate index from the real `pypi.org` that `pip install swarmagent`
+checks by default. Once published to real PyPI, plain `pip install
+swarmagent` will work.
+
+The required env vars (`GROQ_API_KEY`, `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`)
+must be set wherever you install it — `app/config/config.py` reads them at
+import time.
+
+```python
+from app.agent.deep_agent import DeepAgent
+
+agent = DeepAgent("groq")
+
+response_stream, new_turns = agent._invoke(
+    "hello",
+    model="qwen/qwen3.6-27b",
+    history=[],
+    max_tokens=2000,
+    stream=True,
+)
+
+for chunk in response_stream:
+    print(chunk, end="", flush=True)
+```
+
+`history` is a list of `Turn` objects you own — `_invoke` reads it but never
+mutates it; append `new_turns` yourself to carry conversation state forward
+(see `main.py` for a full REPL loop example).
+
 ## Project layout
 
 ```
