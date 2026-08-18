@@ -20,7 +20,7 @@ from pydantic import create_model
 if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
 
-Provider = Literal["anthropic", "openai", "groq"]
+Provider = Literal["anthropic", "openai", "groq", "openrouter"]
 
 
 @dataclass

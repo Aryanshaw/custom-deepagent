@@ -1,4 +1,4 @@
-"""Turn <-> wire-format conversion shared by OpenAI and Groq (both Chat Completions).
+"""Turn <-> wire-format conversion shared by OpenAI, Groq, and OpenRouter (all Chat Completions).
 
 Keeps `Turn` (the public, provider-agnostic shape) separate from what
 actually goes over the wire — `role: "tool"` messages, `tool_calls` with

@@ -14,14 +14,13 @@ from swarmagent.utils.chat_completions_compat import (
     user_turn,
 )
 
+OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 
-class OpenAIAgent(LLM):
-    def __init__(
-        self,
-        api_key: str,
-    ):
-        self.aclient = AsyncOpenAI(api_key=api_key)
-        self.client = OpenAI(api_key=api_key)
+
+class OpenRouterAgent(LLM):
+    def __init__(self, api_key: str):
+        self.client = OpenAI(api_key=api_key, base_url=OPENROUTER_BASE_URL)
+        self.aclient = AsyncOpenAI(api_key=api_key, base_url=OPENROUTER_BASE_URL)
 
     def _call_tool(self, name: str, arguments_json: str) -> Any:
         """Dispatch a tool call to whatever's registered via @tool."""
@@ -41,7 +40,7 @@ class OpenAIAgent(LLM):
         stream: bool = False,
         max_iterations: int = 20,
         on_iteration: Callable[[], bool] | None = None,
-        cache: bool = False
+        cache: bool = False,
     ) -> tuple[str | Generator[str, None, None], list[Turn]]:
         try:
             user_content: list[dict[str, Any]] = [{"type": "text", "text": user_prompt}]
@@ -56,7 +55,7 @@ class OpenAIAgent(LLM):
 
             new_turns: list[Turn] = [user_turn(user_prompt)]
 
-            resolved_tools = resolve_tools(tools, "openai") if tools is not None else tools_for("openai")
+            resolved_tools = resolve_tools(tools, "openrouter") if tools is not None else tools_for("openrouter")
             # tools + true token streaming isn't wired (tool_calls arrive as
             # fragmented deltas across chunks and need reassembly) — when
             # tools are in play, run the real loop below and hand back a
@@ -67,16 +66,13 @@ class OpenAIAgent(LLM):
                 "model": model,
                 "messages": messages,
                 "temperature": temperature,
-                "max_completion_tokens": max_tokens,
+                "max_tokens": max_tokens,
                 "stream": effective_stream,
             }
             if resolved_tools:
                 kwargs["tools"] = resolved_tools
             if effort is not None:
-                kwargs["reasoning_effort"] = to_reasoning_effort(effort)
-            if cache:
-                kwargs["prompt_cache_key"] = "deep-agent-session"
-                kwargs["prompt_cache_retention"] = "24h"
+                kwargs["reasoning"] = {"effort": to_reasoning_effort(effort)}
 
             def _as_result(text: str) -> str | Generator[str, None, None]:
                 if stream and not effective_stream:
@@ -138,7 +134,6 @@ class OpenAIAgent(LLM):
                 function_calls = [tc for tc in tool_calls if tc.type == "function"]
                 if len(function_calls) != len(tool_calls):
                     bad = next(tc for tc in tool_calls if tc.type != "function")
-                    # custom (freeform) tool calls aren't wired up yet
                     raise NotImplementedError(f"unsupported tool_call type: {bad.type}")
 
                 messages.append(message.model_dump(exclude_none=True))
@@ -168,7 +163,7 @@ class OpenAIAgent(LLM):
         except LoopInterrupted:
             raise
         except Exception as e:
-            logger.error(f"Error in OpenAIAgent.run: {e}")
+            logger.error(f"Error in OpenRouterAgent.run: {e}")
             raise e
 
     async def a_run(
@@ -185,7 +180,7 @@ class OpenAIAgent(LLM):
         stream: bool = False,
         max_iterations: int = 20,
         on_iteration: Callable[[], bool] | None = None,
-        cache: bool = False
+        cache: bool = False,
     ) -> tuple[str | AsyncGenerator[str, None], list[Turn]]:
         try:
             user_content: list[dict[str, Any]] = [{"type": "text", "text": user_prompt}]
@@ -200,23 +195,20 @@ class OpenAIAgent(LLM):
 
             new_turns: list[Turn] = [user_turn(user_prompt)]
 
-            resolved_tools = resolve_tools(tools, "openai") if tools is not None else tools_for("openai")
+            resolved_tools = resolve_tools(tools, "openrouter") if tools is not None else tools_for("openrouter")
             effective_stream = stream and not resolved_tools
 
             kwargs: dict[str, Any] = {
                 "model": model,
                 "messages": messages,
                 "temperature": temperature,
-                "max_completion_tokens": max_tokens,
+                "max_tokens": max_tokens,
                 "stream": effective_stream,
             }
             if resolved_tools:
                 kwargs["tools"] = resolved_tools
             if effort is not None:
-                kwargs["reasoning_effort"] = to_reasoning_effort(effort)
-            if cache:
-                kwargs["prompt_cache_key"] = "deep-agent-session"
-                kwargs["prompt_cache_retention"] = "24h"
+                kwargs["reasoning"] = {"effort": to_reasoning_effort(effort)}
 
             def _as_result(text: str) -> str | AsyncGenerator[str, None]:
                 if stream and not effective_stream:
@@ -271,7 +263,6 @@ class OpenAIAgent(LLM):
                 function_calls = [tc for tc in tool_calls if tc.type == "function"]
                 if len(function_calls) != len(tool_calls):
                     bad = next(tc for tc in tool_calls if tc.type != "function")
-                    # custom (freeform) tool calls aren't wired up yet
                     raise NotImplementedError(f"unsupported tool_call type: {bad.type}")
 
                 messages.append(message.model_dump(exclude_none=True))
@@ -301,5 +292,5 @@ class OpenAIAgent(LLM):
         except LoopInterrupted:
             raise
         except Exception as e:
-            logger.error(f"Error in OpenAIAgent.a_run: {e}")
+            logger.error(f"Error in OpenRouterAgent.a_run: {e}")
             raise e

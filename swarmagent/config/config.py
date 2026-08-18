@@ -29,5 +29,9 @@ class _Config:
     def ANTHROPIC_API_KEY(self) -> str:
         return require_env("ANTHROPIC_API_KEY")
 
+    @property
+    def OPENROUTER_API_KEY(self) -> str:
+        return require_env("OPENROUTER_API_KEY")
+
 
 Config = _Config()

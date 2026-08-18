@@ -7,7 +7,7 @@ from swarmagent.config.config import Config
 Role = Literal["system", "user", "assistant", "tool"]
 Effort = Literal["low", "medium", "high", "xhigh", "max"]
 ReasoningEffort = Literal["low", "medium", "high"]
-providers = Literal["openai", "groq", "anthropic"]
+providers = Literal["openai", "groq", "anthropic", "openrouter"]
 
 _EFFORT_TO_REASONING_EFFORT: dict[Effort, ReasoningEffort] = {
     "low": "low",
@@ -180,5 +180,9 @@ class LLMFactory:
                 from swarmagent.factory.anthropic import AnthropicAgent
 
                 return AnthropicAgent(api_key=Config.ANTHROPIC_API_KEY)
+            case "openrouter":
+                from swarmagent.factory.openrouter import OpenRouterAgent
+
+                return OpenRouterAgent(api_key=Config.OPENROUTER_API_KEY)
             case _:
                 raise ValueError(f"Unknown provider: {provider}")

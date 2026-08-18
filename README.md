@@ -1,6 +1,6 @@
 # swarmagent
 
-Pluggable multi-provider LLM agent (Anthropic, Groq, OpenAI) built from
+Pluggable multi-provider LLM agent (Anthropic, Groq, OpenAI, OpenRouter) built from
 scratch around the core agentic tool-use loop: call model → check stop
 reason → run tool calls → append results → repeat.
 
@@ -23,6 +23,7 @@ reads all three at import time:
 GROQ_API_KEY=...
 OPENAI_API_KEY=...
 ANTHROPIC_API_KEY=...
+OPENROUTER_API_KEY=...
 ```
 
 ## Usage
@@ -60,7 +61,7 @@ python -m swarmagent.agent.cli   # interactive REPL, type 'exit' to quit
 swarmagent/
   agent/       SwarmAgent, CLI entrypoint, system prompt, tool registry, tools
   config/      env config + logging
-  factory/     LLM abstract interface + Anthropic/Groq/OpenAI implementations
+  factory/     LLM abstract interface + Anthropic/Groq/OpenAI/OpenRouter implementations
   utils/
 assets/        shared CSS for lessons/reference docs
 lessons/       interactive HTML lessons on agent internals
@@ -70,7 +71,7 @@ reference/     cheat sheets (multi-provider agentic loop, etc.)
 ## Architecture
 
 `LLMFactory.register(provider)` returns a concrete `LLM` implementation
-(`AnthropicAgent` / `GroqAgent` / `OpenAIAgent`), all implementing the same
+(`AnthropicAgent` / `GroqAgent` / `OpenAIAgent` / `OpenRouterAgent`), all implementing the same
 `run` / `a_run` interface defined in `swarmagent/factory/factory.py`:
 
 - Manual tool-calling loop with a `max_iterations` safety cap
