@@ -2,13 +2,15 @@ import json
 from collections.abc import AsyncGenerator, Callable, Generator, Sequence
 from typing import Any
 
-from openai import AsyncOpenAI, AsyncStream, BadRequestError, OpenAI, Stream
+from openai import AsyncOpenAI, BadRequestError, OpenAI
 
 from swarmagent.agent.tool_registry import call_tool, resolve_tools, tools_for
 from swarmagent.config.logger import logger
 from swarmagent.factory.factory import LLM, Effort, LoopInterrupted, Turn, to_reasoning_effort, tool_schema_correction
 from swarmagent.utils.chat_completions_compat import (
+    a_stream_tool_loop,
     assistant_message_to_turn,
+    stream_tool_loop,
     tool_result_turn,
     turns_to_messages,
     user_turn,
@@ -56,32 +58,33 @@ class OpenRouterAgent(LLM):
             new_turns: list[Turn] = [user_turn(user_prompt)]
 
             resolved_tools = resolve_tools(tools, "openrouter") if tools is not None else tools_for("openrouter")
-            # tools + true token streaming isn't wired (tool_calls arrive as
-            # fragmented deltas across chunks and need reassembly) — when
-            # tools are in play, run the real loop below and hand back a
-            # single-chunk generator instead of the raw SDK stream.
-            effective_stream = stream and not resolved_tools
 
             kwargs: dict[str, Any] = {
                 "model": model,
                 "messages": messages,
                 "temperature": temperature,
                 "max_tokens": max_tokens,
-                "stream": effective_stream,
+                "stream": stream,
             }
             if resolved_tools:
                 kwargs["tools"] = resolved_tools
             if effort is not None:
                 kwargs["reasoning"] = {"effort": to_reasoning_effort(effort)}
 
-            def _as_result(text: str) -> str | Generator[str, None, None]:
-                if stream and not effective_stream:
-
-                    def _one_shot() -> Generator[str, None, None]:
-                        yield text
-
-                    return _one_shot()
-                return text
+            if stream:
+                return (
+                    stream_tool_loop(
+                        create=lambda: self.client.chat.completions.create(**kwargs),
+                        call_tool=self._call_tool,
+                        bad_request_error=BadRequestError,
+                        messages=messages,
+                        new_turns=new_turns,
+                        max_iterations=max_iterations,
+                        on_iteration=on_iteration,
+                        error_context="OpenRouterAgent.run",
+                    ),
+                    new_turns,
+                )
 
             for _ in range(max_iterations):
                 if on_iteration is not None and not on_iteration():
@@ -98,35 +101,17 @@ class OpenRouterAgent(LLM):
                     kwargs["messages"] = messages
                     continue
 
-                if isinstance(response, Stream):
-                    # no tool loop can have run yet when streaming is taken
-                    # (it's only ever the first iteration) — the generator
-                    # appends the final assistant turn once fully consumed;
-                    # read `new_turns` after draining.
-                    def _stream_generator(
-                        response: Stream[Any] = response,
-                        new_turns: list[Turn] = new_turns,
-                    ) -> Generator[str, None, None]:
-                        parts: list[str] = []
-                        for chunk in response:
-                            if chunk.choices and chunk.choices[0].delta.content:
-                                parts.append(chunk.choices[0].delta.content)
-                                yield chunk.choices[0].delta.content
-                        new_turns.append({"role": "assistant", "text": "".join(parts)})
-
-                    return _stream_generator(), new_turns
-
                 message = response.choices[0].message
 
                 # if response is not a tool call return the message content
                 if response.choices[0].finish_reason != "tool_calls":
                     new_turns.append({"role": "assistant", "text": message.content or ""})
-                    return _as_result(message.content or ""), new_turns
+                    return message.content or "", new_turns
 
                 tool_calls = message.tool_calls
                 if not tool_calls:
                     new_turns.append({"role": "assistant", "text": message.content or ""})
-                    return _as_result(message.content or ""), new_turns
+                    return message.content or "", new_turns
 
                 # narrow to function-type calls once — a checker can't carry
                 # a type check across two separate `for` loops, so build the
@@ -196,28 +181,33 @@ class OpenRouterAgent(LLM):
             new_turns: list[Turn] = [user_turn(user_prompt)]
 
             resolved_tools = resolve_tools(tools, "openrouter") if tools is not None else tools_for("openrouter")
-            effective_stream = stream and not resolved_tools
 
             kwargs: dict[str, Any] = {
                 "model": model,
                 "messages": messages,
                 "temperature": temperature,
                 "max_tokens": max_tokens,
-                "stream": effective_stream,
+                "stream": stream,
             }
             if resolved_tools:
                 kwargs["tools"] = resolved_tools
             if effort is not None:
                 kwargs["reasoning"] = {"effort": to_reasoning_effort(effort)}
 
-            def _as_result(text: str) -> str | AsyncGenerator[str, None]:
-                if stream and not effective_stream:
-
-                    async def _one_shot() -> AsyncGenerator[str, None]:
-                        yield text
-
-                    return _one_shot()
-                return text
+            if stream:
+                return (
+                    a_stream_tool_loop(
+                        create=lambda: self.aclient.chat.completions.create(**kwargs),
+                        call_tool=self._call_tool,
+                        bad_request_error=BadRequestError,
+                        messages=messages,
+                        new_turns=new_turns,
+                        max_iterations=max_iterations,
+                        on_iteration=on_iteration,
+                        error_context="OpenRouterAgent.a_run",
+                    ),
+                    new_turns,
+                )
 
             for _ in range(max_iterations):
                 if on_iteration is not None and not on_iteration():
@@ -234,31 +224,16 @@ class OpenRouterAgent(LLM):
                     kwargs["messages"] = messages
                     continue
 
-                if isinstance(response, AsyncStream):
-
-                    async def _a_stream_generator(
-                        response: AsyncStream[Any] = response,
-                        new_turns: list[Turn] = new_turns,
-                    ) -> AsyncGenerator[str, None]:
-                        parts: list[str] = []
-                        async for chunk in response:
-                            if chunk.choices and chunk.choices[0].delta.content:
-                                parts.append(chunk.choices[0].delta.content)
-                                yield chunk.choices[0].delta.content
-                        new_turns.append({"role": "assistant", "text": "".join(parts)})
-
-                    return _a_stream_generator(), new_turns
-
                 message = response.choices[0].message
 
                 if response.choices[0].finish_reason != "tool_calls":
                     new_turns.append({"role": "assistant", "text": message.content or ""})
-                    return _as_result(message.content or ""), new_turns
+                    return message.content or "", new_turns
 
                 tool_calls = message.tool_calls
                 if not tool_calls:
                     new_turns.append({"role": "assistant", "text": message.content or ""})
-                    return _as_result(message.content or ""), new_turns
+                    return message.content or "", new_turns
 
                 function_calls = [tc for tc in tool_calls if tc.type == "function"]
                 if len(function_calls) != len(tool_calls):
