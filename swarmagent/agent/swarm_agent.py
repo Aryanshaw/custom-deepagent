@@ -2,7 +2,7 @@ from collections.abc import AsyncGenerator, Callable, Generator, Sequence
 from typing import Any
 
 from swarmagent.agent.prompt.swarmagent_systemprompt import SYSTEM_PROMPT
-from swarmagent.agent.tool_registry import discover_tools, set_verbose
+from swarmagent.agent.tool_registry import discover_tools, set_verbose , default_tools as get_default_tools
 from swarmagent.config.logger import logger
 from swarmagent.factory.factory import LLM, Effort, LLMFactory, Turn, providers
 from swarmagent.utils.pretty import print_output, print_system_prompt
@@ -11,10 +11,13 @@ from swarmagent.utils.pretty import print_output, print_system_prompt
 class SwarmAgent:
     BASE_AGENT_PROMPT = SYSTEM_PROMPT
 
-    def __init__(self, provider: providers, max_iterations: int = 20, verbose: bool = False):
+    def __init__(self, provider: providers, max_iterations: int = 20, verbose: bool = False , load_default_tools: bool = True):
         self.llm: LLM = LLMFactory.register(provider)
         self.max_iterations = max_iterations
         self.verbose = verbose
+        self.load_default_tools = load_default_tools
+        # TODO: built in tools, shell tools for code execution
+        # TODO: tool result size limitations
         # TODO: pre configured self.subagents
         # TODO: swarm of agents to solve big tasks
         # TODO: skills
@@ -48,6 +51,10 @@ class SwarmAgent:
         """
         try:
             discover_tools()
+
+            # load default tools
+            effective_tools = self._resolve_effective_tools(tools)
+
             set_verbose(self.verbose)
             if self.verbose:
                 print_system_prompt(self.BASE_AGENT_PROMPT)
@@ -57,7 +64,7 @@ class SwarmAgent:
                 history=history,
                 image_urls=image_urls,
                 model=model,
-                tools=tools,
+                tools=effective_tools,
                 temperature=temperature,
                 max_tokens=max_tokens,
                 effort=effort,
@@ -97,6 +104,10 @@ class SwarmAgent:
         """
         try:
             discover_tools()
+
+            # load default tools
+            effective_tools = self._resolve_effective_tools(tools)
+
             set_verbose(self.verbose)
             if self.verbose:
                 print_system_prompt(self.BASE_AGENT_PROMPT)
@@ -106,7 +117,7 @@ class SwarmAgent:
                 history=history,
                 image_urls=image_urls,
                 model=model,
-                tools=tools,
+                tools=effective_tools,
                 temperature=temperature,
                 max_tokens=max_tokens,
                 effort=effort,
@@ -124,6 +135,17 @@ class SwarmAgent:
             logger.error(f"Error in SwarmAgent._ainvoke: {e}")
             raise e
 
+    def _resolve_effective_tools(
+        self, tools: Sequence[Callable[..., Any] | dict[str, Any]] | None
+    ) -> list[Callable[..., Any] | dict[str, Any]]:
+        effective_tools = list(tools or [])
+        if self.load_default_tools:
+            seen = {getattr(t, "__name__", None) for t in effective_tools}
+            for t in get_default_tools():
+                if getattr(t, "__name__", None) not in seen:
+                    effective_tools.append(t)
+                    seen.add(getattr(t, "__name__", None))
+        return effective_tools
 
 def _verbose_generator(response: Generator[str, None, None]) -> Generator[str, None, None]:
     """Pass tokens through untouched, then print the full output once the stream ends."""

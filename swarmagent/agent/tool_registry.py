@@ -29,6 +29,7 @@ class ToolSpec:
     description: str
     parameters: dict[str, Any]  # JSON Schema
     func: Callable[..., Any]
+    default: bool = False
 
     def to_anthropic(self) -> dict[str, Any]:
         return {
@@ -85,6 +86,7 @@ def tool(
     *,
     name: str | None = None,
     description: str | None = None,
+    default: bool = False
 ) -> Callable[..., Any]:
     """Register a function as a tool. Use bare (`@tool`) or with overrides (`@tool(name=...)`)."""
 
@@ -94,6 +96,7 @@ def tool(
             description=description or (inspect.getdoc(f) or "").strip(),
             parameters=_build_schema(f),
             func=f,
+            default=default
         )
         if not spec.description:
             raise ValueError(f"tool '{spec.name}' needs a docstring or description=...")
@@ -134,6 +137,9 @@ def tools_for(provider: Provider) -> list[dict[str, Any]]:
         return [s.to_anthropic() for s in specs]
     return [s.to_openai() for s in specs]  # openai + groq share the function-calling shape
 
+def default_tools() -> list[Callable[..., Any]]:
+    """Raw callables flagged default=True — same shape as a hand-built tools=[...] list."""
+    return [s.func for s in _REGISTRY.values() if s.default]
 
 _verbose = False
 

@@ -3,7 +3,7 @@ from swarmagent.agent.tools.testing_tool import add_two_numbers
 
 
 def main():
-    dp_agent = SwarmAgent("groq")
+    dp_agent = SwarmAgent("groq", verbose=True)
     print("Agent started. Type 'exit' to quit.\n")
     history = []
 
