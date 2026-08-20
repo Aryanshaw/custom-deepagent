@@ -285,12 +285,12 @@ def edit_file(path: str, old_content: str, new_content: str):
     
         if old_content not in original:
             return {"success": False, "error": "Target content not found in file"}
-        
-            updated = original.replace(old_content, new_content, 1)  # replace only first occurrence
-        
-            with open(path, "w") as f:
-                f.write(updated)
-        
+
+        updated = original.replace(old_content, new_content, 1)  # replace only first occurrence
+
+        with open(path, "w") as f:
+            f.write(updated)
+
         return {"success": True}
     except Exception as e:
         logger.error(f"Error in edit_file: {e}")
