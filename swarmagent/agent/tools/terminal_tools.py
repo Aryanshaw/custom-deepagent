@@ -1,18 +1,51 @@
 import subprocess
-import os , re
+import os , re , signal
+import threading
 from pathlib import Path
 
 from swarmagent.config.logger import logger
 from swarmagent.agent.tool_registry import tool
 
+MAX_OUTPUT_CHARS = 200_000  # per-stream cap — bounds memory at the source, before the result ever reaches the size-limiter middleware
+
+
+def _kill_process_group(proc: subprocess.Popen) -> None:
+    """Kill the whole process group, not just the shell. With shell=True a
+    pipeline (`yes | head`) forks children the shell itself doesn't own —
+    proc.kill() alone leaves them running as orphans still holding the pipe
+    open, so the reader thread never sees EOF and hangs forever."""
+    try:
+        os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+    except ProcessLookupError:
+        pass  # already dead
+
+
+def _read_capped(stream, cap: int, proc: subprocess.Popen) -> tuple[str, bool]:
+    """Read a process stream line-by-line, capping collected chars. Kills
+    the process group the moment the cap is crossed so a runaway command
+    (e.g. `yes`, `find /`) can't buffer unboundedly in memory before we get
+    to it."""
+    chunks: list[str] = []
+    total = 0
+    truncated = False
+    for line in stream:
+        chunks.append(line)
+        total += len(line)
+        if total >= cap:
+            truncated = True
+            _kill_process_group(proc)
+            break
+    return "".join(chunks), truncated
+
+
 @tool(default=True)
 def run_bash(cmd: str):
     """
     Run a bash command and return the output
-    
+
     Args:
         cmd (str): The bash command to run.
-    
+
     Returns:
         dict: A dictionary containing the output of the command.
     """
@@ -23,21 +56,51 @@ def run_bash(cmd: str):
             "returncode": 1,
             "success": False
         }
-    
-    result = subprocess.run(
+
+    proc = subprocess.Popen(
         cmd,
         shell=True,
-        capture_output=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
         text=True,
-        timeout=30,
         cwd=os.getcwd(),
-        env=os.environ
+        env=os.environ,
+        start_new_session=True,  # own process group, so we can kill the whole pipeline, not just the shell
     )
+
+    results: dict[str, dict] = {"stdout": {}, "stderr": {}}
+
+    def _collect(stream, target: dict) -> None:
+        text, truncated = _read_capped(stream, MAX_OUTPUT_CHARS, proc)
+        target["text"] = text
+        target["truncated"] = truncated
+
+    stdout_thread = threading.Thread(target=_collect, args=(proc.stdout, results["stdout"]))
+    stderr_thread = threading.Thread(target=_collect, args=(proc.stderr, results["stderr"]))
+    stdout_thread.start()
+    stderr_thread.start()
+
+    try:
+        proc.wait(timeout=30)
+    except subprocess.TimeoutExpired:
+        _kill_process_group(proc)
+        proc.wait()
+
+    stdout_thread.join()
+    stderr_thread.join()
+
+    stdout = results["stdout"]["text"].strip()
+    stderr = results["stderr"]["text"].strip()
+    if results["stdout"]["truncated"]:
+        stdout += f"\n[stdout truncated at {MAX_OUTPUT_CHARS} chars, process killed]"
+    if results["stderr"]["truncated"]:
+        stderr += f"\n[stderr truncated at {MAX_OUTPUT_CHARS} chars, process killed]"
+
     return {
-        "stdout": result.stdout.strip(),
-        "stderr": result.stderr.strip(),
-        "returncode": result.returncode,
-        "success": result.returncode == 0
+        "stdout": stdout,
+        "stderr": stderr,
+        "returncode": proc.returncode,
+        "success": proc.returncode == 0
     }
 
 @tool(default=True)

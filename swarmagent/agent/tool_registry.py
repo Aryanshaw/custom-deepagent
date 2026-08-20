@@ -20,6 +20,8 @@ from pydantic import create_model
 if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
 
+    from swarmagent.agent.middleware.base import ToolMiddleware
+
 Provider = Literal["anthropic", "openai", "groq", "openrouter"]
 
 
@@ -149,6 +151,14 @@ def set_verbose(value: bool) -> None:
     _verbose = value
 
 
+_middlewares: list[ToolMiddleware] = []
+
+
+def set_middlewares(middlewares: list[ToolMiddleware]) -> None:
+    global _middlewares
+    _middlewares = middlewares
+
+
 def call_tool(name: str, arguments: dict[str, Any]) -> Any:
     from swarmagent.utils.pretty import print_tool_call, print_tool_result
 
@@ -164,6 +174,8 @@ def call_tool(name: str, arguments: dict[str, Any]) -> Any:
         if _verbose:
             print_tool_result(name, e, is_error=True)
         raise
+    for middleware in _middlewares:
+        result = middleware.after_tool_call(name, arguments, result)
     if _verbose:
         print_tool_result(name, result, is_error=False)
     return result
