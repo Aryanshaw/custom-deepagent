@@ -21,7 +21,7 @@ def main():
 
             tools = [add_two_numbers]  # register tools here
 
-            response_stream, new_messages = dp_agent._invoke(
+            response_stream, new_messages = dp_agent.invoke(
                 prompt, model="qwen/qwen3.6-27b", history=history, max_tokens=2000, stream=True, tools=tools , cache=True
             )
 

@@ -29,7 +29,7 @@ class SwarmAgent:
         # TODO: modes: plan / ask / execute / orchestration mode
         # TODO: human in the loop
 
-    def _invoke(
+    def invoke(
         self,
         prompt: str,
         model: str,
@@ -82,7 +82,7 @@ class SwarmAgent:
             logger.error(f"Error in SwarmAgent._invoke: {e}")
             raise e
 
-    async def _ainvoke(
+    async def ainvoke(
         self,
         prompt: str,
         model: str,
