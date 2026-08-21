@@ -7,6 +7,10 @@ from swarmagent.config.logger import logger
 from swarmagent.agent.tool_registry import tool
 
 MAX_OUTPUT_CHARS = 200_000  # per-stream cap — bounds memory at the source, before the result ever reaches the size-limiter middleware
+MAX_READ_LINES = 2000       # read_file's default+max window — a bounded read can never re-trigger the size-limiter on itself
+MAX_LINE_CHARS = 2000       # per-line cap within that window (one giant minified line would blow the budget otherwise)
+MAX_FIND_RESULTS = 500
+MAX_GREP_MATCHES = 200
 
 
 def _kill_process_group(proc: subprocess.Popen) -> None:
@@ -104,51 +108,90 @@ def run_bash(cmd: str):
     }
 
 @tool(default=True)
-def find_files(directory: str, pattern: str = "*"):
+def find_files(directory: str, pattern: str = "*", limit: int = MAX_FIND_RESULTS):
     """
-    Find files matching a pattern in a directory (recursively)
-    
+    Find files matching a pattern in a directory (recursively), capped at
+    `limit` results so a broad pattern over a huge tree can't return an
+    unbounded list.
+
     Args:
         directory (str): The directory to search in.
         pattern (str, optional): The pattern to search for. Defaults to "*".
-    
+        limit (int, optional): Max results to return (capped at 500). Defaults to 500.
+
     Returns:
-        dict: A dictionary containing the list of files.
+        dict: files found, count, and whether the result was truncated.
     """
+    limit = min(max(limit, 1), MAX_FIND_RESULTS)
 
-    # pathlib appraoch (modern, clean)
-    results = list(Path(directory).rglob(pattern)) # rglob = recursive glob 
+    results: list[str] = []
+    truncated = False
+    for p in Path(directory).rglob(pattern):  # rglob = recursive glob
+        if not p.is_file():
+            continue
+        if len(results) >= limit:
+            truncated = True
+            break
+        results.append(str(p))
 
-    results = [str(p) for p in results if p.is_file()]
-    
     return {
         "files": results,
-        "count": len(results)
+        "count": len(results),
+        "truncated": truncated,
     }
 
 @tool(default=True)
-def read_file(path: str, encoding: str = "utf-8"):
+def read_file(path: str, offset: int = 0, limit: int = MAX_READ_LINES, encoding: str = "utf-8"):
     """
-    Read a file and return its contents
+    Read a file's contents, line-numbered, in a bounded window. Defaults to
+    the first 2000 lines; pass `offset` to page through the rest. A single
+    call can never return more than `limit` lines (capped at 2000) or more
+    than 2000 chars per line — this is what lets it safely re-read a file
+    that was itself spilled by the tool-result size limiter, without
+    re-triggering that same limiter.
 
     Args:
         path (str): The path to the file.
+        offset (int, optional): 0-indexed line to start reading from. Defaults to 0.
+        limit (int, optional): Max lines to return (capped at 2000). Defaults to 2000.
         encoding (str, optional): The encoding of the file. Defaults to "utf-8".
-    
-    Returns:
-        dict: A dictionary containing the file contents.
-    """
-    try:
-        with open(path, "r", encoding=encoding) as f:
-            content = f.read()
-        # detect encoding of the file if not provided
 
-        return {
-            "content": content,
-            "lines": content.splitlines(),  # list of lines, no \n
+    Returns:
+        dict: line-numbered content for the window, start/end line, whether
+        more lines remain, and (if so) the offset to pass next.
+    """
+    limit = min(max(limit, 1), MAX_READ_LINES)
+    try:
+        lines: list[str] = []
+        has_more = False
+        with open(path, "r", encoding=encoding, errors="replace") as f:
+            for i, raw_line in enumerate(f):
+                if i < offset:
+                    continue
+                if len(lines) >= limit:
+                    has_more = True
+                    break
+                line = raw_line.rstrip("\n")
+                if len(line) > MAX_LINE_CHARS:
+                    line = line[:MAX_LINE_CHARS] + f"... [line truncated, {len(line)} chars total]"
+                lines.append(f"{i + 1}\t{line}")
+
+        start_line = offset + 1
+        end_line = offset + len(lines)
+        result = {
+            "content": "\n".join(lines),
+            "start_line": start_line,
+            "end_line": end_line,
+            "truncated": has_more,
             "size": os.path.getsize(path),
-            "success": True
+            "success": True,
         }
+        if has_more:
+            result["note"] = (
+                f"Showing lines {start_line}-{end_line}. More lines follow — "
+                f"pass offset={end_line} to continue."
+            )
+        return result
     except FileNotFoundError:
         logger.error(f"File not found: {path}")
         return {"success": False, "error": f"File not found: {path}"}
@@ -164,48 +207,35 @@ def read_file(path: str, encoding: str = "utf-8"):
         }
 
 @tool(default=True)
-def grep(pattern: str, directory: str, ignore_case: bool = False):
+def grep(pattern: str, directory: str, ignore_case: bool = False, head_limit: int = MAX_GREP_MATCHES):
     """
-    Search for pattern in all files under directory
+    Search for pattern in all files under directory, capped at `head_limit`
+    matches so a broad pattern over a huge tree can't return an unbounded
+    result.
 
     Args:
         pattern (str): The pattern to search for.
         directory (str): The directory to search in.
         ignore_case (bool, optional): Whether to ignore case. Defaults to False.
-    
+        head_limit (int, optional): Max matching lines to return (capped at 200). Defaults to 200.
+
     Returns:
         dict: A dictionary containing the search results.
     """
-
-    # flags = re.IGNORECASE if ignore_case else 0
-    # matches = []
-
-    # for root , _, files in os.walk(directory):
-    #     for file in files:
-    #         filepath = os.path.join(root , file)
-    #         try:
-    #             with open(filepath , "r", encoding="utf-8", errors="ignore") as f:
-    #                 for line_num , line in enumerate(f , start=1):
-    #                     if re.search(pattern , line , flags):
-    #                         matches.append({
-    #                             "file": filepath,
-    #                             "line_num": line_num,
-    #                             "line": line.strip()
-    #                         })
-    #         except (PermissionError, IsADirectoryError):
-    #             continue
-    
-    # return {"matches": matches , "count" : len(matches)}
+    limit = min(max(head_limit, 1), MAX_GREP_MATCHES)
     try:
         cmd = ["grep", "-rn"]           # -r recursive, -n line numbers
         if ignore_case:
             cmd.append("-i")
         cmd += [pattern, directory]
-        
+
         result = subprocess.run(cmd, capture_output=True, text=True)
+        all_lines = result.stdout.splitlines()
+        lines = all_lines[:limit]
         return {
-            "raw": result.stdout,
-            "lines": result.stdout.splitlines(),
+            "lines": lines,
+            "match_count": len(lines),
+            "truncated": len(all_lines) > limit,
             "returncode": result.returncode
         }
     except (PermissionError, IsADirectoryError,FileNotFoundError, Exception) as e:

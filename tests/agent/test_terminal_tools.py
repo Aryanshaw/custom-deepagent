@@ -7,7 +7,10 @@ from __future__ import annotations
 import time
 
 from swarmagent.agent.tools.terminal_tools import (
+    MAX_GREP_MATCHES,
+    MAX_LINE_CHARS,
     MAX_OUTPUT_CHARS,
+    MAX_READ_LINES,
     edit_file,
     find_files,
     grep,
@@ -51,15 +54,17 @@ class TestRunBash:
 
 
 class TestReadFile:
-    def test_reads_content_lines_and_size(self, tmp_path):
+    def test_reads_content_line_numbered_and_size(self, tmp_path):
         f = tmp_path / "sample.txt"
         f.write_text("line one\nline two\n")
 
         result = read_file(str(f))
 
         assert result["success"] is True
-        assert result["content"] == "line one\nline two\n"
-        assert result["lines"] == ["line one", "line two"]
+        assert result["content"] == "1\tline one\n2\tline two"
+        assert result["start_line"] == 1
+        assert result["end_line"] == 2
+        assert result["truncated"] is False
         assert result["size"] == f.stat().st_size
 
     def test_missing_file_reports_error(self, tmp_path):
@@ -67,6 +72,45 @@ class TestReadFile:
 
         assert result["success"] is False
         assert "not found" in result["error"].lower()
+
+    def test_window_is_bounded_and_pageable(self, tmp_path):
+        # Regression: read_file used to read the whole file unconditionally
+        # — including a file the size-limiter itself spilled, causing an
+        # infinite spill -> read -> re-spill loop. A bounded window fixes
+        # that structurally: a single call can never return more than
+        # MAX_READ_LINES lines.
+        f = tmp_path / "big.txt"
+        total_lines = MAX_READ_LINES + 500
+        f.write_text("\n".join(f"line {i}" for i in range(total_lines)))
+
+        first = read_file(str(f))
+        assert first["truncated"] is True
+        assert first["start_line"] == 1
+        assert first["end_line"] == MAX_READ_LINES
+        assert first["content"].count("\n") == MAX_READ_LINES - 1
+        assert "note" in first
+
+        second = read_file(str(f), offset=first["end_line"])
+        assert second["start_line"] == MAX_READ_LINES + 1
+        assert second["end_line"] == total_lines
+        assert second["truncated"] is False
+
+    def test_single_long_line_is_truncated(self, tmp_path):
+        f = tmp_path / "minified.txt"
+        f.write_text("x" * (MAX_LINE_CHARS * 3))
+
+        result = read_file(str(f))
+
+        assert "truncated" in result["content"]
+        assert len(result["content"]) < MAX_LINE_CHARS * 3
+
+    def test_limit_argument_is_capped(self, tmp_path):
+        f = tmp_path / "big.txt"
+        f.write_text("\n".join(f"line {i}" for i in range(MAX_READ_LINES + 500)))
+
+        result = read_file(str(f), limit=999_999)  # try to request way more than the cap
+
+        assert result["end_line"] == MAX_READ_LINES
 
 
 class TestFindFiles:
@@ -86,6 +130,15 @@ class TestFindFiles:
         result = find_files(str(tmp_path), "*.missing")
         assert result["files"] == []
         assert result["count"] == 0
+
+    def test_results_are_capped(self, tmp_path):
+        for i in range(20):
+            (tmp_path / f"f{i}.txt").write_text("")
+
+        result = find_files(str(tmp_path), "*.txt", limit=5)
+
+        assert result["count"] == 5
+        assert result["truncated"] is True
 
 
 class TestGrep:
@@ -112,6 +165,26 @@ class TestGrep:
         result = grep("needle", str(tmp_path), ignore_case=True)
 
         assert any("NEEDLE" in line for line in result["lines"])
+
+    def test_matches_are_capped(self, tmp_path):
+        f = tmp_path / "many.txt"
+        f.write_text("\n".join("needle" for _ in range(MAX_GREP_MATCHES + 50)))
+
+        result = grep("needle", str(tmp_path), head_limit=10)
+
+        assert result["match_count"] == 10
+        assert result["truncated"] is True
+
+    def test_no_unbounded_raw_field(self, tmp_path):
+        # Regression: grep used to also return a "raw" field holding the
+        # full, uncapped stdout — capping "lines" alone didn't actually
+        # bound the result.
+        f = tmp_path / "many.txt"
+        f.write_text("\n".join("needle" for _ in range(MAX_GREP_MATCHES + 50)))
+
+        result = grep("needle", str(tmp_path), head_limit=10)
+
+        assert "raw" not in result
 
 
 class TestWriteFile:
